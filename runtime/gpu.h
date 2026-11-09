@@ -85,3 +85,6 @@ int gpu_render(int out_w, int out_h);    /* returns 1 if something new was drawn
 void gpu_ddraw_frame(const uint8_t *px, int w, int h, int pitch, int bpp);  /* software frames (movies, softtri) */
 GFrame *gpu_frame_new(void);
 void gpu_frame_free(GFrame *f);
+/* the picture last shown, scaled to w x h RGB565 (top row first), for LFB locks; 1 if done.
+ * Waits for the renderer (at most ~0.2 s); 0 when there is none. */
+int gpu_readback565(uint16_t *dst, int w, int h);

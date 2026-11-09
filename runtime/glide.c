@@ -27,6 +27,7 @@ static inline float RF(uint32_t a) { float f; memcpy(&f, G + a, 4); return f; }
 /* ------------------------------------------------------------- state */
 static GState st;                           /* current state */
 static GFrame *cur;                         /* frame being recorded */
+static void front_flush(void);              /* front-buffer drawing (grRenderBuffer, below) */
 static uint32_t cur_state = UINT32_MAX;     /* index of st in cur->states, if unchanged */
 static int win_w = 640, win_h = 480;
 static int color_format;                    /* GR_COLORFORMAT_ARGB/ABGR/RGBA/BGRA */
@@ -142,7 +143,18 @@ static uint32_t mip_bytes(int small, int large, int aspect, int fmt) {
 }
 
 static uint32_t palette[256];
-static uint32_t pal_version = 1;
+static uint32_t pal_version = 1;   /* bumped by palette and NCC table downloads: textures using them convert again */
+/* NCC (YIQ) tables, GuNccTable: yRGB[16] (u8), iRGB[4][3] and qRGB[4][3] (s16), packed data (unused here).
+ * The game never calls grTexNCCTable, so table 0 is the one in use. */
+static struct { int16_t y[16], i[4][3], q[4][3]; } ncc[2];
+static void ncc_load(int t, uint32_t p) {
+    for (int k = 0; k < 16; k++) ncc[t].y[k] = G[p + k];
+    for (int k = 0; k < 4; k++) for (int c = 0; c < 3; c++) {
+        ncc[t].i[k][c] = (int16_t)RD16(p + 16 + (uint32_t)(k * 3 + c) * 2);
+        ncc[t].q[k][c] = (int16_t)RD16(p + 40 + (uint32_t)(k * 3 + c) * 2);
+    }
+    pal_version++;
+}
 
 typedef struct { uint32_t start, size; int small, large, aspect, fmt; uint32_t pal_ver; int dirty, used; uint32_t gone, drawn; } TexKey;
 static TexKey tkeys[GPU_MAX_TEX];
@@ -191,13 +203,23 @@ static inline uint32_t px_argb(int fmt, const uint8_t *s) {
     case 0xc: a = (p >> 12) * 17; r = ((p >> 8) & 15) * 17; g = ((p >> 4) & 15) * 17; b = (p & 15) * 17; break;
     case 0xd: a = p >> 8; r = g = b = p & 255; break;
     case 0xe: { uint32_t c = palette[p & 255]; a = p >> 8; r = (c >> 16) & 255; g = (c >> 8) & 255; b = c & 255; break; }
-    default: r = 255; g = 0; b = 255; break;                          /* YIQ/NCC: not supported */
+    case 0x1: case 0x9: {                                             /* YIQ_422 / AYIQ_8422: NCC table 0 */
+        uint32_t t = p & 255, Y = t >> 4, I = (t >> 2) & 3, Q = t & 3; int v[3];
+        if (fmt == 9) a = p >> 8;
+        for (int n = 0; n < 3; n++) { v[n] = ncc[0].y[Y] + ncc[0].i[I][n] + ncc[0].q[Q][n]; v[n] = v[n] < 0 ? 0 : v[n] > 255 ? 255 : v[n]; }
+        r = (uint32_t)v[0]; g = (uint32_t)v[1]; b = (uint32_t)v[2]; break;
+    }
+    default: r = 255; g = 0; b = 255; break;                          /* not supported: magenta */
     }
     return (a << 24) | (b << 16) | (g << 8) | r;                     /* RGBA8 bytes in memory: r,g,b,a */
 }
 
 static int tex_convert(int slot) {
     TexKey *k = &tkeys[slot];
+    { static int lg = -1; if (lg < 0) lg = getenv("RT_TEX_LOG") ? atoi(getenv("RT_TEX_LOG")) : 0;
+      if (lg) { int w0, h0; lod_dims(k->large, k->aspect, &w0, &h0); int mg = 0; const uint8_t *s0 = tmem + k->start;
+        for (int i = 0; i < w0 * h0; i++) { uint32_t v = px_argb(k->fmt, s0 + (uint32_t)i * (uint32_t)fmt_bpp(k->fmt)); if ((v & 0xFFFFFF) == 0xFF00FF) mg++; }
+        if (mg || lg > 1) rt_log("tex %d: fmt %#x lod %d..%d aspect %d at %#x: %d magenta texels, chroma %u", slot, k->fmt, k->small, k->large, k->aspect, k->start, mg, st.chroma_mode); } }
     tex_drop_overlapping(slot);
     int w, h; lod_dims(k->large, k->aspect, &w, &h);
     int levels = k->large - k->small + 1;
@@ -224,7 +246,7 @@ static int tex_lookup(uint32_t start, int small, int large, int aspect, int fmt)
     for (int i = 0; i < ntkeys; i++) {
         TexKey *k = &tkeys[i];
         if (k->used && k->start == start && k->large == large && k->small == small && k->aspect == aspect && k->fmt == fmt) {
-            int stale = k->dirty || ((fmt == 5 || fmt == 6 || fmt == 0xe) && k->pal_ver != pal_version);
+            int stale = k->dirty || ((fmt == 5 || fmt == 6 || fmt == 0xe || fmt == 1 || fmt == 9) && k->pal_ver != pal_version);
             if (!stale) return i;
             /* new pixels for a texture this frame already draws with (NFS II SE's dialogs load
              * every backdrop tile into the same TMU spot, drawing each in between): the frame is
@@ -235,7 +257,7 @@ static int tex_lookup(uint32_t start, int small, int large, int aspect, int fmt)
     }
     int slot = -1;
     for (int i = 0; i < ntkeys; i++) if (!tkeys[i].used && swaps - tkeys[i].gone >= TEX_GRACE) { slot = i; break; }
-    if (slot < 0) { if (ntkeys >= GPU_MAX_TEX) slot = 0; else slot = ntkeys++; }
+    if (slot < 0) { if (ntkeys >= GPU_MAX_TEX) { static int w; if (!w++) rt_log("textures: all %d slots in use, reusing slot 0", GPU_MAX_TEX); slot = 0; } else slot = ntkeys++; }
     tkeys[slot] = (TexKey){ start, mip_bytes(small, large, aspect, fmt), small, large, aspect, fmt, 0, 1, 1, 0, 0 };
     return tex_convert(slot);
 }
@@ -276,7 +298,7 @@ GL_(GlideInit) {
 GL_(GlideShutdown) { UNUSED; return 0; }
 GL_(ErrorSetCallback) { UNUSED; return 0; }
 GL_(SstSelect) { UNUSED; return 0; }
-GL_(Finish) { UNUSED; return 0; }
+GL_(Finish) { UNUSED; front_flush(); return 0; }
 GL_(DitherMode) { UNUSED; return 0; }
 GL_(Enable) { UNUSED; return 0; }
 GL_(Disable) { UNUSED; return 0; }
@@ -401,7 +423,28 @@ GL_(SstWinOpen) {
     rt_log("grSstWinOpen(res=%#x -> %dx%d, colorfmt=%u, origin=%u, bufs=%u/%u)", res, win_w, win_h, A(3), A(4), A(5), A(6));
     return 1;
 }
-GL_(RenderBuffer) { UNUSED; return 0; }
+/* Front-buffer drawing. NFS II SE's network screens switch to the front buffer
+ * (grRenderBuffer(GR_BUFFER_FRONTBUFFER)) or write the front buffer through the LFB, draw a
+ * panel straight onto the visible picture and then wait for the other players without
+ * swapping. Those draws are recorded in a frame of their own and published as an incremental
+ * frame (no full clear: the renderer draws it over the last picture) when the game goes back to
+ * the back buffer, finishes an LFB write, or waits for the chip (grSstIdle / grFinish).
+ * Back-buffer work in progress is set aside meanwhile. */
+static GFrame *back_saved; static int front_mode;
+static void front_begin(void) { if (!front_mode) { back_saved = cur; cur = NULL; state_changed(); front_mode = 1; } }
+static void front_flush(void) {
+    if (!front_mode || !cur || !cur->ncmds) return;
+    memcpy(cur->fog_lut, fog_lut, sizeof fog_lut);
+    GFrame *f = cur; cur = NULL; state_changed();
+    gpu_publish(f);
+}
+static void front_end(void) { if (front_mode) { front_flush(); gpu_frame_free(cur); cur = back_saved; back_saved = NULL; state_changed(); front_mode = 0; } }
+GL_(RenderBuffer) {
+    (void)c;
+    { static int lg = -1; if (lg < 0) lg = getenv("RT_LFB_LOG") != NULL; if (lg) rt_log("grRenderBuffer(%u) from %#x", A(0), rt_caller()); }
+    if (A(0) == 0) front_begin(); else front_end();      /* 0 front, 1 back (Glide 2 and 3) */
+    return 0;
+}
 
 GL_(VertexLayout) {
     (void)c;
@@ -521,8 +564,8 @@ GL_(FogTable) {
     }
     return 0;
 }
-GL_(ChromakeyMode) { (void)c; st.chroma_mode = (uint8_t)A(0); state_changed(); return 0; }
-GL_(ChromakeyValue) { (void)c; st.chroma_color = argb_from(A(0)); state_changed(); return 0; }
+GL_(ChromakeyMode) { (void)c; if (getenv("RT_TEX_LOG") && st.chroma_mode != (uint8_t)A(0)) rt_log("grChromakeyMode(%u)", A(0)); st.chroma_mode = (uint8_t)A(0); state_changed(); return 0; }
+GL_(ChromakeyValue) { (void)c; static uint32_t lastv = 1; if (A(0) != lastv && rt_verbose > 1) rt_log("grChromakeyValue(%#x)", A(0)); lastv = A(0); st.chroma_color = argb_from(A(0)); state_changed(); return 0; }
 
 GL_(TexMinAddress) { UNUSED; return 0; }
 GL_(TexMaxAddress) { UNUSED; return TMEM_SIZE - 8; }
@@ -565,6 +608,7 @@ GL_(TexDownloadMipMapLevelPartial) {
 GL_(TexDownloadTable) {
     (void)c;
     if (A(0) == 2 || A(0) == 3) { memcpy(palette, G + A(1), sizeof palette); pal_version++; }
+    else if (A(0) <= 1) ncc_load((int)A(0), A(1));
     return 0;
 }
 GL_(TexSource) {
@@ -585,7 +629,8 @@ GL_(TexSource) {
  * on unlock they're sent to the renderer as an overlay (unwritten pixels stay
  * transparent: the buffer is pre-filled with a key the game never writes). */
 #define LFB_KEY 0xF81Fu   /* RGB565 magenta with the low green bit clear */
-static uint32_t lfb_buf, lfb_cap; static int lfb_locked, lfb_stride;
+static uint32_t lfb_buf, lfb_cap; static int lfb_locked, lfb_stride, lfb_pipe, lfb_buffer;
+static const uint16_t *lfb_snap;            /* what the lock started with (the shown picture), or NULL */
 GL_(LfbLock) {
     (void)c;
     uint32_t type = A(0) & 1, info = A(5);
@@ -594,23 +639,33 @@ GL_(LfbLock) {
         if (lfb_buf) gfree(lfb_buf);
         lfb_cap = (uint32_t)(win_w * win_h * 2); lfb_buf = galloc(lfb_cap);
     }
-    if (type == 1) {           /* write-only */
-        uint16_t *p = (uint16_t *)(G + lfb_buf);
-        for (int i = 0; i < win_w * win_h; i++) p[i] = LFB_KEY;
-    }
-    lfb_locked = (int)type + 1;
+    /* the game reads the screen through the lock too (write-only or not: a Voodoo's LFB reads
+     * back), e.g. to cut the menu backdrop into tiles under a sliding panel. So fill the buffer
+     * with the picture last shown, and keep a copy: on unlock only pixels that changed are drawn.
+     * Without a picture (no renderer) unwritten pixels keep a key colour instead. */
+    static uint16_t *snap; static int snap_cap;
+    if (snap_cap < win_w * win_h) { free(snap); snap_cap = win_w * win_h; snap = malloc((size_t)snap_cap * 2); }
+    uint16_t *p = (uint16_t *)(G + lfb_buf);
+    lfb_snap = gpu_readback565(snap, win_w, win_h) ? snap : NULL;
+    if (lfb_snap) memcpy(p, snap, (size_t)win_w * win_h * 2);
+    else for (int i = 0; i < win_w * win_h; i++) p[i] = type == 1 ? LFB_KEY : 0;
+    lfb_locked = (int)type + 1; lfb_pipe = (int)A(4); lfb_buffer = (int)A(1);
+    { static int lg = -1; if (lg < 0) lg = getenv("RT_LFB_LOG") != NULL; if (lg) rt_log("grLfbLock(type=%#x buffer=%u mode=%u origin=%u pipe=%u) from %#x", A(0), A(1), A(2), A(3), A(4), rt_caller()); }
     WR32(info + 4, lfb_buf); WR32(info + 8, (uint32_t)lfb_stride); WR32(info + 12, 0 /* 565 */); WR32(info + 16, 0);
     if (rt_verbose > 1) rt_log("grLfbLock(type=%#x buf=%u mode=%u)", A(0), A(1), A(2));
     return 1;
 }
-static void lfb_submit(const uint16_t *p, int x0, int y0, int w, int h, int stride_px) {
+static void lfb_submit(const uint16_t *p, int x0, int y0, int w, int h, int stride_px, const uint16_t *snap) {
+    { static int lg = -1; if (lg < 0) lg = getenv("RT_LFB_LOG") != NULL;
+      if (lg) { int key = 0; for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) key += p[y * stride_px + x] == 0xF81F; static uint32_t hist[65536]; memset(hist, 0, sizeof hist); int top = 0; for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) { uint16_t v = p[y * stride_px + x]; if (++hist[v] > hist[top]) top = v; }
+        rt_log("lfb: %dx%d at %d,%d (%d key px) top %#06x x%u, chroma mode %u value %#x, pipeline %d, from %#x", w, h, x0, y0, key, top, hist[top], st.chroma_mode, st.chroma_color, lfb_pipe, rt_caller()); } }
     frame_begin();
     GROW(cur->lfbs, cur->nlfbs, cur->caplfbs, GLfb);
     GLfb *l = &cur->lfbs[cur->nlfbs++];
     l->w = win_w; l->h = win_h; l->rgba = calloc((size_t)(win_w * win_h), 4);
     for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) {
         uint16_t v = p[y * stride_px + x];
-        if (v == LFB_KEY) continue;
+        if (snap ? v == snap[y * stride_px + x] : v == LFB_KEY) continue;
         int X = x0 + x, Y = y0 + y; if (X < 0 || Y < 0 || X >= win_w || Y >= win_h) continue;
         uint32_t r = (v >> 11) & 31, g = (v >> 5) & 63, b = v & 31;
         r = (r << 3) | (r >> 2); g = (g << 2) | (g >> 4); b = (b << 3) | (b >> 2);
@@ -618,9 +673,17 @@ static void lfb_submit(const uint16_t *p, int x0, int y0, int w, int h, int stri
     }
     GCmd *k = cmd_new(GC_LFB); k->lfb = cur->nlfbs - 1;
 }
+/* LFB pixels for the front buffer (0) show at once, as an incremental frame; for the back buffer
+ * they join the frame being recorded */
+static void lfb_submit_to(int buffer, const uint16_t *p, int x0, int y0, int w, int h, int stride_px, const uint16_t *snap) {
+    if (buffer != 0) { lfb_submit(p, x0, y0, w, h, stride_px, snap); return; }
+    int was = front_mode;
+    front_begin(); lfb_submit(p, x0, y0, w, h, stride_px, snap); front_flush();
+    if (!was) front_end();
+}
 GL_(LfbUnlock) {
     (void)c; (void)a;
-    if (lfb_locked == 2) lfb_submit((const uint16_t *)(G + lfb_buf), 0, 0, win_w, win_h, win_w);
+    if (lfb_locked == 2) lfb_submit_to(lfb_buffer, (const uint16_t *)(G + lfb_buf), 0, 0, win_w, win_h, win_w, lfb_snap);
     lfb_locked = 0;
     return 1;
 }
@@ -628,13 +691,14 @@ GL_(LfbWriteRegion) {
     (void)c;
     /* dst_buffer, dst_x, dst_y, src_format, src_width, src_height, pixelPipeline, src_stride, src_data */
     if (A(3) != 0) { if (rt_verbose) rt_log("grLfbWriteRegion: format %u unsupported", A(3)); return 1; }
-    lfb_submit((const uint16_t *)(G + A(8)), (int)A(1), (int)A(2), (int)A(4), (int)A(5), (int)(A(7) / 2));
+    lfb_submit((const uint16_t *)(G + A(8)), (int)A(1), (int)A(2), (int)A(4), (int)A(5), (int)(A(7) / 2), NULL);
     return 1;
 }
 GL_(LfbReadRegion) {
     (void)c;
     /* we can't read the GPU frame synchronously: hand back black */
     uint32_t w = A(3), h = A(4), stride = A(5), dst = A(6);
+    { static int lg = -1; if (lg < 0) lg = getenv("RT_LFB_LOG") != NULL; if (lg) rt_log("grLfbReadRegion(buffer=%u, %u,%u %ux%u stride %u) from %#x", A(0), A(1), A(2), w, h, stride, rt_caller()); }
     for (uint32_t y = 0; y < h; y++) memset(G + dst + y * stride, 0, w * 2);
     return 1;
 }
@@ -686,7 +750,7 @@ GL_(G2SstQueryHardware) {
     }
     return 1;
 }
-GL_(G2SstIdle) { UNUSED; return 0; }
+GL_(G2SstIdle) { UNUSED; front_flush(); return 0; }
 GL_(G2SstIsBusy) { UNUSED; return 0; }
 GL_(G2SstStatus) { UNUSED; return 0x0FFFF03Fu; }   /* idle, no swaps pending, not in retrace */
 GL_(G2GammaCorrectionValue) { UNUSED; return 0; }
@@ -699,6 +763,7 @@ GL_(G2TexCalcMemRequired) {
 GL_(G2TexDownloadTable) {   /* (tmu, type, data) */
     (void)c;
     if (A(1) == 2 || A(1) == 3) { memcpy(palette, G + A(2), sizeof palette); pal_version++; }
+    else if (A(1) <= 1) ncc_load((int)A(1), A(2));
     return 0;
 }
 GL_(G2TexCombineFunction) {
@@ -722,7 +787,7 @@ GL_(G2LfbWriteRegion) {
     /* dst_buffer, dst_x, dst_y, src_format, src_width, src_height, src_stride, src_data (no pixelPipeline) */
     (void)c;
     if (A(3) != 0) { if (rt_verbose) rt_log("grLfbWriteRegion: format %u unsupported", A(3)); return 1; }
-    lfb_submit((const uint16_t *)(G + A(7)), (int)A(1), (int)A(2), (int)A(4), (int)A(5), (int)(A(6) / 2));
+    lfb_submit_to((int)A(0), (const uint16_t *)(G + A(7)), (int)A(1), (int)A(2), (int)A(4), (int)A(5), (int)(A(6) / 2), NULL);
     return 1;
 }
 GL_(G2FogGenerateExp) {

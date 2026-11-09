@@ -182,6 +182,31 @@ void gpu_ddraw_frame(const uint8_t *px, int w, int h, int pitch, int bpp) {
     pthread_mutex_unlock(&dd_mu);
 }
 
+
+/* ---- readback of the shown picture (LFB locks: the game reads the screen through them) */
+static pthread_mutex_t rb_mu = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t rb_cv = PTHREAD_COND_INITIALIZER;
+static int rb_want, rb_ok, rb_w, rb_h; static uint16_t *rb_dst;
+int __attribute__((weak)) gpu_headless_sync(void) { return -1; }   /* gpu_egl.c: render now, synchronously */
+static void readback_serve(void);
+int gpu_readback565(uint16_t *dst, int w, int h) {
+    pthread_mutex_lock(&rb_mu);
+    rb_dst = dst; rb_w = w; rb_h = h; rb_ok = 0; rb_want = 1;
+    pthread_mutex_unlock(&rb_mu);
+    int hs = gpu_headless_sync();                   /* headless: renders (and serves) right here */
+    pthread_mutex_lock(&rb_mu);
+    if (hs < 0 && rb_want) {                        /* a renderer on another thread: wait for its next frame */
+        int d = bgl_drop();
+        struct timespec dl; clock_gettime(CLOCK_REALTIME, &dl);
+        dl.tv_nsec += 200 * 1000000; if (dl.tv_nsec >= 1000000000) { dl.tv_sec++; dl.tv_nsec -= 1000000000; }
+        while (rb_want && pthread_cond_timedwait(&rb_cv, &rb_mu, &dl) == 0) {}
+        pthread_mutex_unlock(&rb_mu); bgl_restore(d); pthread_mutex_lock(&rb_mu);
+    }
+    int ok = rb_ok; rb_want = 0; rb_dst = NULL;
+    pthread_mutex_unlock(&rb_mu);
+    return ok;
+}
+
 #if defined(__EMSCRIPTEN__) || !defined(RT_NO_SDL)
 /* ------------------------------------------------------------ renderer */
 static GLuint prog, prog_blit, vbo, vao, quad_vao, quad_vbo, fog_tex, ovl_tex, dd_tex;
@@ -474,6 +499,32 @@ static void letterbox(int out_w, int out_h, int src_w, int src_h, int *x, int *y
     *x = (out_w - *w) / 2; *y = (out_h - *h) / 2;
 }
 
+
+/* renderer thread, after drawing: hand the shown picture to a waiting LFB lock */
+static void readback_serve(void) {
+    pthread_mutex_lock(&rb_mu);
+    if (rb_want && rb_dst && fbo && shown) {
+        static uint8_t *px; static size_t cap;
+        size_t need = (size_t)fbo_w * fbo_h * 4;
+        if (need > cap) { free(px); px = malloc(need); cap = need; }
+        glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+        glReadPixels(0, 0, fbo_w, fbo_h, GL_RGBA, GL_UNSIGNED_BYTE, px);
+        glBindFramebuffer(GL_FRAMEBUFFER, gpu_target_fbo);
+        for (int y = 0; y < rb_h; y++) {
+            int sy = fbo_h - 1 - ((y * fbo_h) / rb_h + fbo_h / rb_h / 2);       /* the FBO is bottom-up */
+            if (sy < 0) sy = 0;
+            for (int x = 0; x < rb_w; x++) {
+                int sx = (x * fbo_w) / rb_w + fbo_w / rb_w / 2;
+                const uint8_t *q = px + ((size_t)sy * fbo_w + sx) * 4;
+                rb_dst[y * rb_w + x] = (uint16_t)(((q[0] >> 3) << 11) | ((q[1] >> 2) << 5) | (q[2] >> 3));
+            }
+        }
+        rb_ok = 1;
+    }
+    if (rb_want) { rb_want = 0; pthread_cond_broadcast(&rb_cv); }
+    pthread_mutex_unlock(&rb_mu);
+}
+
 int gpu_render(int out_w, int out_h) {
     if (!gl_ready) gl_init();
     renderer_seen = now_s();
@@ -525,6 +576,7 @@ int gpu_render(int out_w, int out_h) {
         glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D, fbo_color);
         glBindVertexArray(quad_vao); glDrawArrays(GL_TRIANGLE_STRIP, 0, 4); glBindVertexArray(vao);
     }
+    if (rb_want) readback_serve();
     return fresh;
 }
 
