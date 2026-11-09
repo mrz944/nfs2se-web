@@ -221,11 +221,12 @@ function concat(...parts) {
 }
 
 // ------------------------------------------------------------------ names
-// One name everywhere: the lobby, the relay (relay.mjs cleanName) and the game. The game keeps
-// 10 characters and only has glyphs for plain letters, digits and a few signs.
-const NAME_MAX = 10;
+// One name everywhere: the lobby, the relay (relay.mjs cleanName) and the game (RT_PLAYER_NAME,
+// runtime/game.c). NFS II SE keeps 8 characters and only has glyphs for plain letters, digits
+// and a few signs.
+const NAME_MAX = 8;
 const cleanName = (v) => String(v || '').replace(/[^A-Za-z0-9 ._!-]/g, '').replace(/\s+/g, ' ').trimStart().slice(0, NAME_MAX);
-const randomName = () => 'Player' + Math.floor(1000 + Math.random() * 9000);
+const randomName = () => 'Racer' + Math.floor(100 + Math.random() * 900);   // 8 characters
 // Before the game starts, put the name where the game reads it:
 //  - fedata/text/text.eng: the default "Player1" (a string table: u32 offsets, then
 //    NUL-terminated strings), used until the game has saved its own settings. Rebuilt each
@@ -652,7 +653,8 @@ async function start() {
       log('ERROR game exited, code', code); track('error', { kind: 'exit', msg: 'code ' + code }); gameStopped('The game closed itself (see the log). Reload the page to start again.');
     },
     // the screen in pixels, landscape: the game offers the resolutions that fit (glide.c)
-    arguments: ['/opfs/nfs2se', `RT_SCREEN=${settings.screen === 'auto' ? screenPixels() : settings.screen}`, ...(settings.unlock ? [] : ['RT_LOCKED=1'])],
+    arguments: ['/opfs/nfs2se', `RT_SCREEN=${settings.screen === 'auto' ? screenPixels() : settings.screen}`, ...(settings.unlock ? [] : ['RT_LOCKED=1']),
+      ...(cleanName($('pname')?.value).trim() ? [`RT_PLAYER_NAME=${cleanName($('pname').value).trim()}`] : [])],   // the game's name at CONNECT (game.c)
     // controllers before the game looks for them (it does once, right at start)
     preRun: [(m) => { try { writePads(m); } catch {} }],
     print: (t) => console.log(t),
