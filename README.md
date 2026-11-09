@@ -55,6 +55,10 @@ be reproduced before it ran correctly:
 - **textures reloaded mid-frame:** the menus' pop-up dialogs load every backdrop tile into the same
   spot in texture memory and draw each one in between. A real Voodoo draws at once; a recorded frame
   is drawn later, so a reloaded texture now gets a fresh slot and the dialogs draw correctly;
+- **car colours from palettes:** every car has its own palette, swapped many times a frame over the
+  same textures. A Voodoo looks colours up as it draws; the runtime now keeps a copy of a texture
+  per palette and switches when a palette is loaded after the texture was picked, so cars no longer
+  flash another car's colours;
 - **free disk space** that fits the game's 32-bit arithmetic (a 4 GB answer wrapped to "less than 1 MB");
 - **the CD and DirectX checks:** drive types, the volume label, and `DSETUP.DLL`'s version query;
 - **an empty mouse poll yields:** the front end spins on the mouse while a loader thread works; the

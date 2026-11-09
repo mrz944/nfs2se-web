@@ -143,7 +143,24 @@ static uint32_t mip_bytes(int small, int large, int aspect, int fmt) {
 }
 
 static uint32_t palette[256];
-static uint32_t pal_version = 1;   /* bumped by palette and NCC table downloads: textures using them convert again */
+/* A palette (P_8) or NCC (YIQ) texture's colours come from a table looked up when the Voodoo
+ * draws, not when the texture is downloaded. NFS II SE gives every car its own palette (that is
+ * how car colours work) and swaps palettes many times a frame over the same textures. Here a
+ * texture is converted to RGBA with the table of the moment, so a cached texture is keyed by a
+ * hash of its table's contents too: each car's palette gets its own copy, kept until the texture
+ * memory is overwritten. */
+static uint32_t pal_hash = 1, ncc_hash = 1;
+static uint32_t fnv32(const void *p, size_t n) {
+    uint32_t h = 2166136261u; const uint8_t *b = p;
+    while (n--) h = (h ^ *b++) * 16777619u;
+    return h | 1;
+}
+static uint32_t table_for(int fmt) {
+    if (fmt == 0x5 || fmt == 0x6 || fmt == 0xe) return pal_hash;
+    if (fmt == 0x1 || fmt == 0x9) return ncc_hash;
+    return 0;
+}
+static void tex_reselect(void);
 /* NCC (YIQ) tables, GuNccTable: yRGB[16] (u8), iRGB[4][3] and qRGB[4][3] (s16), packed data (unused here).
  * The game never calls grTexNCCTable, so table 0 is the one in use. */
 static struct { int16_t y[16], i[4][3], q[4][3]; } ncc[2];
@@ -153,10 +170,15 @@ static void ncc_load(int t, uint32_t p) {
         ncc[t].i[k][c] = (int16_t)RD16(p + 16 + (uint32_t)(k * 3 + c) * 2);
         ncc[t].q[k][c] = (int16_t)RD16(p + 40 + (uint32_t)(k * 3 + c) * 2);
     }
-    pal_version++;
+    if (t == 0) { ncc_hash = fnv32(&ncc[0], sizeof ncc[0]); tex_reselect(); }
+}
+static void palette_load(uint32_t p) {
+    memcpy(palette, G + p, sizeof palette);
+    pal_hash = fnv32(palette, sizeof palette);
+    tex_reselect();
 }
 
-typedef struct { uint32_t start, size; int small, large, aspect, fmt; uint32_t pal_ver; int dirty, used; uint32_t gone, drawn; } TexKey;
+typedef struct { uint32_t start, size; int small, large, aspect, fmt; uint32_t table; int dirty, used; uint32_t gone, drawn; } TexKey;
 static TexKey tkeys[GPU_MAX_TEX];
 static int ntkeys;
 /* A texture whose TMU memory another texture was downloaded over is gone: its slot is dropped
@@ -219,7 +241,9 @@ static int tex_convert(int slot) {
     { static int lg = -1; if (lg < 0) lg = getenv("RT_TEX_LOG") ? atoi(getenv("RT_TEX_LOG")) : 0;
       if (lg) { int w0, h0; lod_dims(k->large, k->aspect, &w0, &h0); int mg = 0; const uint8_t *s0 = tmem + k->start;
         for (int i = 0; i < w0 * h0; i++) { uint32_t v = px_argb(k->fmt, s0 + (uint32_t)i * (uint32_t)fmt_bpp(k->fmt)); if ((v & 0xFFFFFF) == 0xFF00FF) mg++; }
-        if (mg || lg > 1) rt_log("tex %d: fmt %#x lod %d..%d aspect %d at %#x: %d magenta texels, chroma %u", slot, k->fmt, k->small, k->large, k->aspect, k->start, mg, st.chroma_mode); } }
+        if (lg > 2) { uint64_t rs = 0, gs = 0, bs = 0, hs = 1469598103934665603ull; for (int i = 0; i < w0 * h0; i++) { uint32_t v = px_argb(k->fmt, s0 + (uint32_t)i * (uint32_t)fmt_bpp(k->fmt)); rs += v & 255; gs += (v >> 8) & 255; bs += (v >> 16) & 255; hs = (hs ^ v) * 1099511628211ull; }
+          rt_log("TEXC swap %u slot %d at %#x fmt %#x lod %d asp %d drawn %u avg %d,%d,%d hash %08x", swaps, slot, k->start, k->fmt, k->large, k->aspect, k->drawn, (int)(rs / (uint64_t)(w0 * h0)), (int)(gs / (uint64_t)(w0 * h0)), (int)(bs / (uint64_t)(w0 * h0)), (unsigned)hs); }
+        else if (mg || lg > 1) rt_log("tex %d: fmt %#x lod %d..%d aspect %d at %#x: %d magenta texels, chroma %u", slot, k->fmt, k->small, k->large, k->aspect, k->start, mg, st.chroma_mode); } }
     tex_drop_overlapping(slot);
     int w, h; lod_dims(k->large, k->aspect, &w, &h);
     int levels = k->large - k->small + 1;
@@ -238,16 +262,23 @@ static int tex_convert(int slot) {
     free(t->rgba);
     t->rgba = out; t->w = w; t->h = h; t->levels = levels; t->version++;
     gpu_tex_unlock();
-    k->dirty = 0; k->pal_ver = pal_version;
+    k->dirty = 0; k->table = table_for(k->fmt);
     return slot;
 }
 
+#define TEX_TABLES 16      /* copies of one texture with different tables kept at once */
 static int tex_lookup(uint32_t start, int small, int large, int aspect, int fmt) {
+    uint32_t want = table_for(fmt);
+    int copies = 0, oldest = -1;
     for (int i = 0; i < ntkeys; i++) {
         TexKey *k = &tkeys[i];
         if (k->used && k->start == start && k->large == large && k->small == small && k->aspect == aspect && k->fmt == fmt) {
-            int stale = k->dirty || ((fmt == 5 || fmt == 6 || fmt == 0xe || fmt == 1 || fmt == 9) && k->pal_ver != pal_version);
-            if (!stale) return i;
+            if (k->table != want) {                                 /* the same texture under another table */
+                copies++;
+                if (k->drawn != swaps + 1 && (oldest < 0 || k->drawn < tkeys[oldest].drawn)) oldest = i;
+                continue;
+            }
+            if (!k->dirty) return i;
             /* new pixels for a texture this frame already draws with (NFS II SE's dialogs load
              * every backdrop tile into the same TMU spot, drawing each in between): the frame is
              * drawn later, so keep the old pixels in their slot and give the new ones a fresh slot */
@@ -255,10 +286,11 @@ static int tex_lookup(uint32_t start, int small, int large, int aspect, int fmt)
             return tex_convert(i);
         }
     }
+    if (copies >= TEX_TABLES && oldest >= 0) { tkeys[oldest].used = 0; tkeys[oldest].gone = swaps; ngone++; }
     int slot = -1;
     for (int i = 0; i < ntkeys; i++) if (!tkeys[i].used && swaps - tkeys[i].gone >= TEX_GRACE) { slot = i; break; }
     if (slot < 0) { if (ntkeys >= GPU_MAX_TEX) { static int w; if (!w++) rt_log("textures: all %d slots in use, reusing slot 0", GPU_MAX_TEX); slot = 0; } else slot = ntkeys++; }
-    tkeys[slot] = (TexKey){ start, mip_bytes(small, large, aspect, fmt), small, large, aspect, fmt, 0, 1, 1, 0, 0 };
+    tkeys[slot] = (TexKey){ start, mip_bytes(small, large, aspect, fmt), small, large, aspect, fmt, want, 1, 1, 0, 0 };
     return tex_convert(slot);
 }
 
@@ -271,10 +303,13 @@ static void tmem_written(uint32_t start, uint32_t len) {
             k->dirty = 1;
         }
     }
-    if (tsrc.slot >= 0 && tkeys[tsrc.slot].dirty) {
-        tsrc.slot = tex_lookup(tsrc.start, tsrc.small, tsrc.large, tsrc.aspect, tsrc.fmt);
-        if (st.tex != tsrc.slot) { st.tex = tsrc.slot; state_changed(); }
-    }
+    if (tsrc.slot >= 0 && tkeys[tsrc.slot].dirty) tex_reselect();
+}
+/* the selected texture's pixels or table changed after grTexSource: what is drawn next uses the new ones */
+static void tex_reselect(void) {
+    if (tsrc.slot < 0) return;
+    tsrc.slot = tex_lookup(tsrc.start, tsrc.small, tsrc.large, tsrc.aspect, tsrc.fmt);
+    if (st.tex != tsrc.slot) { st.tex = tsrc.slot; state_changed(); }
 }
 
 /* -------------------------------------------------------------- API */
@@ -607,7 +642,7 @@ GL_(TexDownloadMipMapLevelPartial) {
 }
 GL_(TexDownloadTable) {
     (void)c;
-    if (A(0) == 2 || A(0) == 3) { memcpy(palette, G + A(1), sizeof palette); pal_version++; }
+    if (A(0) == 2 || A(0) == 3) palette_load(A(1));
     else if (A(0) <= 1) ncc_load((int)A(0), A(1));
     return 0;
 }
@@ -762,7 +797,7 @@ GL_(G2TexCalcMemRequired) {
 }
 GL_(G2TexDownloadTable) {   /* (tmu, type, data) */
     (void)c;
-    if (A(1) == 2 || A(1) == 3) { memcpy(palette, G + A(2), sizeof palette); pal_version++; }
+    if (A(1) == 2 || A(1) == 3) palette_load(A(2));
     else if (A(1) <= 1) ncc_load((int)A(1), A(2));
     return 0;
 }
