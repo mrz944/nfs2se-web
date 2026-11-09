@@ -162,7 +162,8 @@ much easier to chase than in a browser.
 - ✅ Browser build: automatic download from R2, start, menus and a race, tested in Chromium
 - ✅ Online: lobby, virtual IPX LAN, two-player races natively and between two browsers, with NFS3's
   smoother play ported (each player's own car reacts like the host's; see [docs/online.md](docs/online.md))
-- 🚧 Next: player names from the lobby, wider testing with more players and real internet links
+- ✅ Your lobby name is your name in the game (filled in at CONNECT)
+- 🚧 Next: wider testing with more players and real internet links
 
 ## Credits
 

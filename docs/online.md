@@ -68,7 +68,14 @@ About 220 ms of that is the game itself (its input scheduling and getting the ca
 same for everyone; smoother play removes the round trip a client used to add on top, so every
 player's car now responds like the host's.
 
+## Player names
+
+The page passes the lobby name to the game (`RT_PLAYER_NAME`, `runtime/game.c`), which writes it
+into the game's own network name once its settings are loaded: the settings block at `0x510b70`
+(saved as `FEDATA/PC/CONFIG/config.dat`), name at +0x1ac, 8 characters. So CONNECT's "enter
+name" already shows the lobby name, on a first visit too. The field was found by saving two races
+in which only the typed name differed (the game saves its settings when a race starts).
+
 ## What could be better
 
-- **Player names.** Everyone is "Player1" unless they type a name after CONNECT; the page could fill
-  in the lobby name once the save file (`FEDATA/PC/CONFIG/config.dat`) is understood.
+- **More players.** Tested with two; three to eight should follow the same rules (car k = player k).
