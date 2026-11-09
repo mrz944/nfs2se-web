@@ -1,5 +1,14 @@
 # nfs3-webgl — architecture
 
+> **NFS II SE note.** This document comes from [NFS3 Web](https://github.com/mrz944/nfs3-web), whose
+> runtime this project shares; read "the game" as NFS II SE where it applies. What differs here:
+> the exe is `NFS2SEA.EXE` (3dfx build, Watcom) with `EACSND.DLL`; graphics are **Glide 2** loaded
+> at run time (`glide2x.dll`, `glide2_fns` in `runtime/glide.c`: fixed GrVertex layout, snap
+> constant on x/y, reversed LOD and aspect codes, one 2 MB TMU); the CD is emulated as drive `D:`
+> (`runtime/win32_nfs2.c`); game threads run one at a time under a single-core lock
+> (`bgl_*` in `runtime/core.c`, from NFS4 Web); and NFS3's game tweaks (`runtime/game.c`) and car
+> sync (`runtime/net.c`) are off.
+
 Static recompilation of *Need for Speed III: Hot Pursuit* (PC, modern patch) to
 WebAssembly + WebGL, following the approach of nfsu2-web / NFSU2Recomp.
 
