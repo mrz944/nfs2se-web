@@ -132,14 +132,20 @@ void net_deliver(const uint8_t src[6], const uint8_t *p, int len) {
  *    a client's car ahead by half the round trip (it's that old when it arrives).
  * RT_NETSYNC=0 turns both off.
  *
+ * NFS II SE uses the same EA network layer as NFS3 (this code comes from NFS3 Web), with
+ * its own message type and car layout:
  * Game packets ("\xEAdat"): fe, payload length, seq, ack, CRC-16 (BE), payload.
- * A client's controls: payload 06 00 + 4 bytes; a bundle: 06 + 8 blocks of 4 (player
- * k in block k). CRC: reflected, table at 0x566b54 (poly 0xA001), init 0xFBEA, over
- * the bytes from fe on with the CRC bytes zero. Cars: 8 pointers at 0x5efac8, car k
- * = player k, then the AI; physics state at +0x98 (88 bytes). */
-#define CAR_TABLE 0x5efac8u
-#define CAR_STATE 0x98u
+ * A client's controls: payload 05 00 + 4 bytes; a bundle: 05 + 8 blocks of 4 (player
+ * k in block k). CRC: reflected CRC-16 (poly 0xA001), init 0xFBEA, over the bytes from
+ * fe on with the CRC bytes zero. Cars: pointers at 0x50f918 (records 0x690 apart),
+ * car k = player k, then the AI; physics state at +0x9c, 88 bytes of 16.16 fixed point:
+ * position, velocity, more motion, a 3x3 orientation, spin (the same block as NFS3's
+ * floats at +0x98). Found from guest memory snapshots (RT_MEMDUMP) of a race. */
+#define MSG_CONTROLS 0x05
+#define CAR_TABLE 0x50f918u
+#define CAR_STATE 0x9cu
 #define CAR_BYTES 88
+#define FIX 65536.0f
 #define SYNC_PORT 0x7ea5
 static int sync_on = -1;
 static int my_slot = -1;                  /* client: my block in the bundles (learned) */
@@ -155,27 +161,27 @@ static pthread_mutex_t sync_mu = PTHREAD_MUTEX_INITIALIZER;
 
 static uint16_t game_crc(const uint8_t *p, int n) {
     uint16_t c = 0xFBEA;
-    for (int i = 0; i < n; i++) c = (uint16_t)((c >> 8) ^ RD16(0x566b54u + 2u * (uint8_t)(c ^ p[i])));
+    for (int i = 0; i < n; i++) { c ^= p[i]; for (int b = 0; b < 8; b++) c = (c & 1) ? (uint16_t)((c >> 1) ^ 0xA001) : (uint16_t)(c >> 1); }
     return c;
 }
 static int is_dat(const uint8_t *d, int n) { return n >= 10 && d[0] == 0xEA && d[1] == 'd' && d[2] == 'a' && d[3] == 't' && d[4] == 0xfe && d[5] + 10 == n; }
 static int sync_enabled(void) {
-    if (sync_on < 0) { const char *e = getenv("RT_NETSYNC"); sync_on = e && atoi(e) != 0; }   /* NFS3 car sync: its addresses, off for NFS2 SE until ported */
+    if (sync_on < 0) { const char *e = getenv("RT_NETSYNC"); sync_on = !e || atoi(e) != 0; }
     return sync_on && online;
 }
 static uint32_t car_ptr(int k) {
     uint32_t c = RD32(CAR_TABLE + 4u * (uint32_t)k);
-    return c >= 0x400000u && c + 0x9ac < GUEST_SIZE ? c : 0;
+    return c >= 0x400000u && c + 0x690 < GUEST_SIZE ? c : 0;
 }
 /* a game packet going out (game thread) */
 static void sync_out(const uint8_t *d, int n) {
     if (!sync_enabled() || !is_dat(d, n)) return;
-    if (n == 16 && d[10] == 0x06) {          /* my controls (I'm a client) */
+    if (n == 16 && d[10] == MSG_CONTROLS) {  /* my controls (I'm a client) */
         pthread_mutex_lock(&sync_mu);
         memcpy(my_ctl, d + 12, 4); memcpy(sent_ctl[d[6]], d + 12, 4); sent_t[d[6]] = tnow();
         am_client = 1; last_race_pkt = tnow();
         pthread_mutex_unlock(&sync_mu);
-    } else if (n == 43 && d[10] == 0x06) {   /* a bundle (I'm the host) */
+    } else if (n == 43 && d[10] == MSG_CONTROLS) {   /* a bundle (I'm the host) */
         bundle_t[d[6]] = tnow();
     }
 }
@@ -184,11 +190,11 @@ static void sync_in(uint8_t *d, int n) {
     if (!sync_enabled() || !is_dat(d, n)) return;
     pthread_mutex_lock(&sync_mu);
     double now = tnow();
-    if (n == 16 && d[10] == 0x06) {          /* a client's controls: its ack tells the round trip */
+    if (n == 16 && d[10] == MSG_CONTROLS) {  /* a client's controls: its ack tells the round trip */
         am_host = 1; last_race_pkt = now;
         double t = bundle_t[d[7]];
         if (t > 0 && now - t < 1.0) { double r = now - t; rtt_s = r < rtt_s ? r : rtt_s + (r - rtt_s) * 0.02; }
-    } else if (n == 43 && d[10] == 0x06) {   /* a bundle */
+    } else if (n == 43 && d[10] == MSG_CONTROLS) {   /* a bundle */
         am_client = 1; last_race_pkt = now;
         /* learn my block: the one holding what I sent with the acked seq */
         const uint8_t *sent = sent_ctl[d[7]];
@@ -260,16 +266,16 @@ void net_frame(void) {
         remote[k].have = 0;
         if (now - remote[k].t > 0.25) continue;
         uint32_t c = car_ptr(k); if (!c) continue;
-        float s[CAR_BYTES / 4]; memcpy(s, remote[k].st, CAR_BYTES);
+        int32_t s[CAR_BYTES / 4]; memcpy(s, remote[k].st, CAR_BYTES);   /* 16.16 fixed point */
         if (am_host) {                        /* it left the client half a round trip ago */
             float dt = (float)(rtt_s * 0.5 + (now - remote[k].t));
-            for (int j = 0; j < 3; j++) s[j] += s[3 + j] * dt;
+            for (int j = 0; j < 3; j++) s[j] += (int32_t)((float)s[3 + j] * dt);
         }
         /* a small position error is taken out over a few updates (a visible snap otherwise), a
          * big one (a crash, a reset to the track) at once; the rest of the state is set as is */
-        float cur[3]; memcpy(cur, G + c + CAR_STATE, 12);
-        float ex = s[0] - cur[0], ey = s[1] - cur[1], ez = s[2] - cur[2];
-        if (ex * ex + ey * ey + ez * ez < 16.0f) { s[0] = cur[0] + ex * 0.5f; s[1] = cur[1] + ey * 0.5f; s[2] = cur[2] + ez * 0.5f; }
+        int32_t cur[3]; memcpy(cur, G + c + CAR_STATE, 12);
+        float ex = (float)(s[0] - cur[0]) / FIX, ey = (float)(s[1] - cur[1]) / FIX, ez = (float)(s[2] - cur[2]) / FIX;
+        if (ex * ex + ey * ey + ez * ez < 16.0f) for (int j = 0; j < 3; j++) s[j] = cur[j] + (s[j] - cur[j]) / 2;
         memcpy(G + c + CAR_STATE, s, CAR_BYTES);
     }
     pthread_mutex_unlock(&sync_mu);

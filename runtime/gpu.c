@@ -146,11 +146,11 @@ void gpu_publish(GFrame *f) {
         static int cl = -1; static double last;
         if (cl < 0) cl = getenv("RT_CARLOG") ? atoi(getenv("RT_CARLOG")) : 0;   /* ms between lines */
         if (cl > 0 && now_s() - last >= cl / 1000.0) {
-            last = now_s(); char b[512]; int k = 0;
+            last = now_s(); char b[768]; int k = 0;
             for (int i = 0; i < 8; i++) {
-                uint32_t car = RD32(0x5efac8u + 4 * i); if (car < 0x400000 || car >= GUEST_SIZE) continue;
-                float p[3], v, w[3]; memcpy(p, G + car + 0x98, 12); memcpy(&v, G + car + 0xb8, 4); memcpy(w, G + car + 0xd8, 12); w[1] = atan2f(w[0], w[2]);   /* heading from the forward row */
-                k += snprintf(b + k, sizeof b - k, " %d:(%.2f,%.2f,%.2f %.1f w%.4f)", i, p[0], p[1], p[2], v, w[1]);
+                uint32_t car = RD32(0x50f918u + 4 * i); if (car < 0x400000 || car >= GUEST_SIZE) continue;   /* NFS II SE: net.c */
+                int32_t p[3], vz; memcpy(p, G + car + 0x9c, 12); memcpy(&vz, G + car + 0xb0, 4);
+                k += snprintf(b + k, sizeof b - k, " %d:(%.2f,%.2f,%.2f %.1f)", i, p[0] / 65536.0, p[1] / 65536.0, p[2] / 65536.0, vz / 65536.0);
             }
             rt_log("cars%s", b);
         }
