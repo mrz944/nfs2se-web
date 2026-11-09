@@ -101,7 +101,7 @@ flowchart LR
    read from the Origin Private File System, frames are drawn on the page's animation frame, and
    audio goes through an AudioWorklet.
 
-More on the shared runtime is in [ARCHITECTURE.md](ARCHITECTURE.md).
+More on the shared runtime is in [ARCHITECTURE.md](ARCHITECTURE.md); how the online races behave over real pings is in [docs/online.md](docs/online.md).
 
 ## Getting started
 
@@ -160,8 +160,9 @@ much easier to chase than in a browser.
 
 - ✅ Intro movies, menus and dialogs, single races with keyboard and mouse, Glide 2 rendering, sound
 - ✅ Browser build: automatic download from R2, start, menus and a race, tested in Chromium
-- 🚧 Online: the lobby and the virtual IPX LAN are in place; the game's network race is next to test,
-  then tuning for latency (redundant packets, best-host pick, maybe NFS3's "smoother play")
+- ✅ Online: lobby, virtual IPX LAN, two-player races natively and between two browsers, with NFS3's
+  smoother play ported (each player's own car reacts like the host's; see [docs/online.md](docs/online.md))
+- 🚧 Next: player names from the lobby, wider testing with more players and real internet links
 
 ## Credits
 
