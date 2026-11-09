@@ -1,0 +1,618 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NFS II SE</title>
+<meta name="description" content="Need for Speed II: Special Edition (1997) recompiled to run in your browser. Original handling, tracks and music, no install, online multiplayer with friends.">
+<meta name="theme-color" content="#030b3d">
+<meta name="author" content="Marcin Zadka">
+<link rel="canonical" href="https://nfs2se.xyz/">
+<link rel="icon" href="/favicon.ico" sizes="48x48">
+<link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="NFS II SE">
+<meta property="og:title" content="NFS II SE, in your browser">
+<meta property="og:description" content="The 1997 classic, recompiled for the web. Original handling, tracks and music, no install, online races with friends.">
+<meta property="og:url" content="https://nfs2se.xyz/">
+<meta property="og:image" content="https://nfs2se.xyz/icons/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="NFS II SE: play in your browser. No install, online multiplayer, WebGL 2.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="NFS II SE, in your browser">
+<meta name="twitter:description" content="The 1997 classic, recompiled for the web. No install, online races with friends.">
+<meta name="twitter:image" content="https://nfs2se.xyz/icons/og.png">
+<!--
+  Look: the game's own 1998 main menu with a light pixel touch: deep blue rings, gold italic
+  headings, pill buttons that light up yellow. The backdrop and the logo are drawn on small
+  canvases with a gentle dither and scaled up with hard pixels; buttons, titles and labels use
+  a pixel font (Silkscreen), the logo Russo One (both SIL OFL, in fonts/), running text Verdana.
+  No EA logos or artwork are shipped with this page.
+-->
+<style>
+  @font-face { font-family: "Silkscreen"; font-weight: 400; font-display: swap; src: url(fonts/silkscreen-latin-400-normal.woff2) format("woff2"); }
+  @font-face { font-family: "Silkscreen"; font-weight: 700; font-display: swap; src: url(fonts/silkscreen-latin-700-normal.woff2) format("woff2"); }
+  @font-face { font-family: "Russo One"; font-weight: 400; font-display: block; src: url(fonts/russo-one-latin-400-normal.woff2) format("woff2"); }
+  :root {
+    --night: #000418; --navy: #041250; --deep: #06125a; --blue: #0b2a9e; --royal: #2050e0; --steel: #5a7ee8; --sky: #8cc4ff;
+    --gold: #ffd800; --amber: #ff9c00; --rust: #a04800; --ink: #1a0c00;
+    --text: #e8eeff; --muted: #92a6e0; --err: #ff5a4a; --ok: #6aea8a;
+    --hi: #a8c0ff; --lo: #000830;                                /* bevel light / shade */
+    --px: "Silkscreen", "Courier New", monospace;             /* labels, buttons, headings */
+    --ui: Verdana, Tahoma, "DejaVu Sans", Geneva, sans-serif; /* running text, as on a 1998 PC */
+    /* pixel-rounded corners: 2px steps */
+    --notch: polygon(0 4px, 2px 4px, 2px 2px, 4px 2px, 4px 0, calc(100% - 4px) 0, calc(100% - 4px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 4px, 100% 4px,
+      100% calc(100% - 4px), calc(100% - 2px) calc(100% - 4px), calc(100% - 2px) calc(100% - 2px), calc(100% - 4px) calc(100% - 2px), calc(100% - 4px) 100%,
+      4px 100%, 4px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 4px), 0 calc(100% - 4px));
+    /* the game's menu button: round left end in pixel steps, square right end */
+    --pill: polygon(10px 0, 100% 0, 100% 100%, 10px 100%, 10px calc(100% - 2px), 6px calc(100% - 2px), 6px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 6px),
+      2px calc(100% - 6px), 2px calc(100% - 10px), 0 calc(100% - 10px), 0 10px, 2px 10px, 2px 6px, 4px 6px, 4px 4px, 6px 4px, 6px 2px, 10px 2px);
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { margin: 0; min-height: 100%; background: var(--night); color: var(--text); font: 13px/1.55 var(--ui); }
+  /* the pixel font stays crisp: no smoothing on anything set in it */
+  .mbtn, button, label.btn, .panel > .ph h2, .tip b, .maker b, .specs dt, h3.minor, .bar h3, .pill, #online label, #rooms th, .opt b, .opt output, .tag, .ticker, footer,
+  .badge, .counter i, #fps, #hint, #netbadge, #loading, #loadbadge, .steps li::before, #top-list .r { -webkit-font-smoothing: none; -moz-osx-font-smoothing: unset; font-smooth: never; }
+  a { color: var(--sky); }
+  ::selection { background: var(--gold); color: var(--ink); }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+  /* ------------------------------------------------------------ backdrop */
+  #bg { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; background: var(--night); }
+  #bg canvas { position: absolute; inset: 0; width: 100%; height: 100%; image-rendering: pixelated; image-rendering: crisp-edges; }
+  #bg .scan { position: absolute; inset: 0; background: repeating-linear-gradient(0deg, rgba(0, 0, 0, .14) 0 1px, transparent 1px 3px); }
+
+  /* --------------------------------------------------------------- frame */
+  #setup-wrap { position: relative; z-index: 1; min-height: 100vh; display: flex; flex-direction: column; max-width: 1080px; margin: 0 auto; padding: 14px 16px 10px; }
+  header { display: flex; align-items: center; min-height: 96px; }
+  #logo { display: block; image-rendering: pixelated; image-rendering: crisp-edges; max-width: 100%; height: auto; }
+  .layout { display: grid; grid-template-columns: 260px 1fr; gap: 18px; margin-top: 12px; align-items: start; flex: 1; }
+  @media (max-width: 760px) { .layout { grid-template-columns: 1fr; } header { min-height: 64px; } }
+
+  /* ------------------------------------------------------- menu buttons */
+  nav.menu { display: flex; flex-direction: column; gap: 10px; padding-top: 4px; }
+  .mbtn, button, label.btn { font: 400 16px/1 var(--px); color: #fff; cursor: pointer; border: 0; margin: 0; white-space: nowrap; letter-spacing: 0; }
+  .mbtn { position: relative; display: flex; align-items: center; justify-content: space-between; height: 30px; padding: 0 14px 0 16px; text-align: left; text-decoration: none;
+    text-transform: uppercase; clip-path: var(--pill);
+    background: linear-gradient(180deg, #5a74e0 0 2px, #3550c4 2px 8px, #2238a0 8px 16px, #172a80 16px 24px, #0e1c5c 24px);
+    text-shadow: 2px 2px 0 #000820; }
+  .mbtn::after { content: ""; width: 6px; height: 10px; flex: none; margin-left: 10px; background: #c8d4ff;
+    clip-path: polygon(0 0, 2px 0, 2px 2px, 4px 2px, 4px 4px, 6px 4px, 6px 6px, 4px 6px, 4px 8px, 2px 8px, 2px 10px, 0 10px); }
+  .mbtn:hover, .mbtn:focus-visible { color: var(--gold); outline: none;
+    background: linear-gradient(90deg, var(--gold) 0 6px, var(--amber) 6px 10px, transparent 10px),
+                linear-gradient(180deg, #7890f0 0 2px, #4862d8 2px 8px, #2c44b4 8px 16px, #1d3290 16px 24px, #12226a 24px); }
+  .mbtn:hover::after, .mbtn:focus-visible::after { background: var(--gold); }
+  .mbtn.go { color: var(--ink); text-shadow: 1px 1px 0 #fff6b0;
+    background: linear-gradient(180deg, #fff8b0 0 2px, #ffe640 2px 8px, #ffcc00 8px 16px, #ffa800 16px 24px, #d87800 24px); }
+  .mbtn.go::after { background: var(--ink); }
+  .mbtn.go:hover, .mbtn.go:focus-visible { color: #000; background: linear-gradient(180deg, #fffce0 0 2px, #fff070 2px 8px, #ffdc20 8px 16px, #ffb800 16px 24px, #e88800 24px);
+    animation: blink 1s steps(2, jump-none) infinite; }
+  .mbtn.go:disabled { filter: grayscale(.8) brightness(.6); cursor: default; animation: none; }
+  .mbtn.dim { background: linear-gradient(180deg, #2c387c 0 2px, #1c2660 2px 16px, #121a48 16px); color: #aab6e8; }
+  @keyframes blink { 50% { filter: brightness(1.15); } }
+  label.btn input { display: none; }
+  .menu .sep { height: 2px; background: repeating-linear-gradient(90deg, var(--steel) 0 2px, transparent 2px 4px); margin: 2px 0; opacity: .6; }
+  .menu .hint { color: var(--muted); font-size: 11px; padding: 0 4px; }
+  .tip, .maker { margin-top: 8px; padding: 8px 10px; font-size: 11px; color: #d0daff; clip-path: var(--notch);
+    background: linear-gradient(180deg, #0a1a6a, #040e48); box-shadow: inset 0 2px 0 var(--gold), inset 2px 0 0 #1e3494, inset -2px -2px 0 var(--lo); }
+  .tip b, .maker b { display: block; font: 700 16px/1.2 var(--px); color: var(--gold); text-transform: uppercase; text-shadow: 2px 2px 0 var(--rust); margin-bottom: 2px; }
+  .maker a { color: #fff; text-decoration: none; } .maker a:hover { color: var(--gold); text-decoration: underline; }
+
+  /* small buttons inside panels */
+  button { padding: 6px 12px; font-size: 16px; clip-path: var(--notch); text-transform: uppercase;
+    background: linear-gradient(180deg, #5a74e0 0 2px, #3550c4 2px 50%, #1c2f94 50%); box-shadow: inset 0 -2px 0 #0a1450; text-shadow: 2px 2px 0 #000820; }
+  button:not(.mbtn):hover:not(:disabled) { color: var(--gold); background: linear-gradient(90deg, var(--gold) 0 4px, transparent 4px), linear-gradient(180deg, #7890f0 0 2px, #4862d8 2px 50%, #2840b0 50%); }
+  button.secondary { background: linear-gradient(180deg, #34428c 0 2px, #222c6c 2px 50%, #18205a 50%); color: #c0ccff; }
+  button:disabled { opacity: .45; cursor: default; }
+  button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--gold); outline-offset: 0; }
+
+  /* -------------------------------------------------------------- panels */
+  .panels { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+  .panel { clip-path: var(--notch); background: linear-gradient(180deg, rgba(12, 30, 116, .9), rgba(4, 12, 66, .92) 140px, rgba(3, 9, 52, .93));
+    box-shadow: inset 2px 2px 0 #3c5ad0, inset -2px -2px 0 var(--lo), inset 4px 4px 0 #0e2380; }
+  .panel > .ph { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 14px 6px;
+    background: linear-gradient(180deg, #2848c8 0 2px, #1a34a8 2px 50%, #10247c 50% calc(100% - 2px), var(--gold) calc(100% - 2px)); }
+  .panel > .ph h2 { margin: 0; font: 700 16px/1.2 var(--px); text-transform: uppercase; color: var(--gold); text-shadow: 2px 2px 0 var(--rust), 4px 4px 0 #000820; font-style: italic; }
+  .panel > .pb { padding: 10px 14px 14px; }
+  .panel p { margin: 6px 0; }
+  .muted { color: var(--muted); }
+  #status { min-height: 1.3em; font-weight: bold; }
+  #status.err, .err { color: var(--err); }
+  progress { width: 100%; height: 14px; margin-top: 8px; appearance: none; -webkit-appearance: none; border: 0; background: #020820; box-shadow: inset 2px 2px 0 #000, inset -2px -2px 0 #2a3c94; }
+  progress::-webkit-progress-bar { background: #020820; box-shadow: inset 2px 2px 0 #000, inset -2px -2px 0 #2a3c94; }
+  progress::-webkit-progress-value { background: repeating-linear-gradient(90deg, var(--gold) 0 6px, var(--amber) 6px 8px, transparent 8px 10px); }
+  progress::-moz-progress-bar { background: repeating-linear-gradient(90deg, var(--gold) 0 6px, var(--amber) 6px 8px, transparent 8px 10px); }
+  .specs { display: grid; grid-template-columns: auto 1fr; gap: 3px 14px; margin: 8px 0 0; font-size: 12px; }
+  .specs dt { color: var(--gold); font: 700 16px/1.3 var(--px); text-transform: uppercase; } .specs dd { margin: 0; color: #d4dcff; }
+  .steps { margin: 0; padding-left: 0; list-style: none; counter-reset: s; }
+  .steps li { counter-increment: s; position: relative; padding: 6px 0 6px 40px; border-bottom: 2px solid rgba(90, 126, 232, .18); color: #d4dcff; }
+  .steps li::before { content: counter(s); position: absolute; left: 0; top: 5px; width: 28px; height: 22px; display: grid; place-items: center; clip-path: var(--pill);
+    font: 700 16px/1 var(--px); color: var(--ink); background: linear-gradient(180deg, #fff8b0 0 2px, #ffd800 2px 50%, #ff9c00 50%); }
+  .steps li b { color: #fff; font-weight: bold; }
+  .steps + .specs { margin-top: 12px; }
+  .twocol { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  @media (max-width: 760px) { .twocol { grid-template-columns: 1fr; } }
+  h3.minor, .bar h3 { margin: 0 0 6px; font: 700 16px/1.2 var(--px); color: #fff; text-transform: uppercase; text-shadow: 2px 2px 0 #000820; }
+  h3.minor::before, .bar h3::before { content: "» "; color: var(--gold); }
+  .ticks { list-style: none; margin: 0; padding: 0; }
+  .ticks li { position: relative; padding: 5px 0 5px 22px; color: #d4dcff; border-bottom: 2px solid rgba(90, 126, 232, .14); }
+  .ticks li::before { content: ""; position: absolute; left: 2px; top: 10px; width: 10px; height: 8px; background: var(--ok);
+    clip-path: polygon(0 4px, 2px 4px, 2px 6px, 4px 6px, 4px 4px, 6px 4px, 6px 2px, 8px 2px, 8px 0, 10px 0, 10px 2px, 8px 2px, 8px 4px, 6px 4px, 6px 6px, 4px 6px, 4px 8px, 2px 8px, 2px 6px, 0 6px); }
+  .ticks.plus li::before { background: var(--gold); width: 8px; height: 8px; top: 10px;
+    clip-path: polygon(3px 0, 5px 0, 5px 3px, 8px 3px, 8px 5px, 5px 5px, 5px 8px, 3px 8px, 3px 5px, 0 5px, 0 3px, 3px 3px); }
+  .ticks b { color: #fff; }
+  .credit-line { margin-top: 12px !important; font-size: 11px; } .credit-line a { color: var(--gold); }
+
+  /* ---------------------------------------------------------- online lobby */
+  .pill { font: 700 16px/1.1 var(--px); color: var(--muted); padding: 1px 8px; background: #020a38; text-transform: uppercase; clip-path: var(--notch); box-shadow: inset 0 0 0 2px #2c3c94; }
+  .pill.ok { color: var(--ok); box-shadow: inset 0 0 0 2px #1f6a40; } .pill.ok::before { content: "■ "; }
+  .pill.bad { color: var(--err); box-shadow: inset 0 0 0 2px #7a2a24; }
+  #online input, #online select { background: #010624; color: var(--text); border: 0; border-radius: 0; padding: 5px 7px; font: 13px var(--ui); width: 100%;
+    box-shadow: inset 2px 2px 0 #000, inset -2px -2px 0 #34489c; }
+  #online label { display: block; color: var(--muted); font: 700 16px/1.4 var(--px); text-transform: uppercase; }
+  #online .check { display: flex; align-items: center; gap: 8px; align-self: end; padding-bottom: 6px; text-transform: none; font: 12px var(--ui); }
+  #online .check input { width: auto; accent-color: var(--gold); }
+  .namebox { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .namebox input { max-width: 220px; }
+  .bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 14px; }
+  .bar h3 { margin: 0; }
+  .card { margin-top: 10px; padding: 10px 12px; clip-path: var(--notch); background: rgba(1, 6, 36, .9); box-shadow: inset 2px 0 0 var(--gold), inset 0 -2px 0 #1a2a7c, inset -2px 0 0 #1a2a7c, inset 0 2px 0 #1a2a7c; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  @media (max-width: 480px) { .grid { grid-template-columns: 1fr; } }
+  .actions { display: flex; gap: 8px; margin-top: 10px; }
+  .msg { color: var(--err); font-weight: bold; margin: 8px 0 0; }
+  .tablewrap { overflow-x: auto; margin-top: 8px; box-shadow: inset 0 0 0 2px #1c2a7a; }
+  #rooms { width: 100%; border-collapse: collapse; font-size: 12px; }
+  #rooms th { text-align: left; color: var(--gold); font: 700 16px/1 var(--px); text-transform: uppercase; padding: 6px 8px; background: linear-gradient(180deg, #2848c8 0 2px, #14287c 2px); }
+  #rooms td { padding: 6px 8px; border-top: 2px solid #0e1a5c; vertical-align: middle; }
+  #rooms tbody tr:nth-child(odd) { background: rgba(32, 60, 170, .2); }
+  #rooms tbody tr:hover { background: rgba(255, 216, 0, .1); }
+  #rooms td:last-child { text-align: right; }
+  #rooms .rname { font-weight: bold; color: #fff; }
+  #rooms .sub { color: var(--muted); font: 11px var(--ui); margin: 0; }
+  .tag { display: inline-block; font: 700 16px/1 var(--px); text-transform: uppercase; padding: 1px 4px; margin-left: 6px; background: #24348a; color: #c8d2ff; }
+  .tag.race { background: var(--gold); color: var(--ink); }
+  .ping-good { color: var(--ok); font-weight: bold; } .ping-ok { color: #ffd650; font-weight: bold; } .ping-bad { color: var(--err); font-weight: bold; }
+  #rooms-empty { margin-top: 10px; }
+  #members { list-style: none; padding: 0; margin: 10px 0; }
+  #members li { display: flex; justify-content: space-between; gap: 8px; padding: 5px 10px; margin-bottom: 4px; font-size: 12px;
+    background: linear-gradient(90deg, #4d6dff 0 4px, rgba(40, 70, 190, .4) 4px, rgba(10, 20, 80, .2)); }
+  #members li:first-child { background: linear-gradient(90deg, var(--gold) 0 4px, rgba(40, 70, 190, .4) 4px, rgba(10, 20, 80, .2)); }
+  #share { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+  #share code { background: #010624; box-shadow: inset 2px 2px 0 #000, inset -2px -2px 0 #34489c; padding: 6px 8px; word-break: break-all; flex: 1 1 240px; color: var(--gold); font: 11px var(--ui); }
+  .howto { font-size: 12px; color: #d0daff; }
+  .howto b { color: #fff; font-weight: bold; }
+
+  /* ---------------------------------------------------------- 1998 extras */
+  .ticker { margin-top: 14px; overflow: hidden; white-space: nowrap; font: 700 16px/1 var(--px); color: #cfe0ff; padding: 6px 0; text-transform: uppercase;
+    background: linear-gradient(180deg, var(--gold) 0 2px, #0a1a6e 2px calc(100% - 2px), var(--gold) calc(100% - 2px)); }
+  .ticker span { display: inline-block; padding-left: 100%; animation: tick 46s steps(460) infinite; animation-delay: -9s; }
+  .ticker b { color: var(--gold); }
+  @keyframes tick { to { transform: translateX(-100%); } }
+  footer { margin-top: 14px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; color: #8090cc; font: 400 16px/1.2 var(--px); padding-bottom: 6px; text-transform: uppercase; }
+  .credits { text-align: right; } .credits a { color: var(--gold); text-decoration: none; } .credits a:hover { text-decoration: underline; }
+  @media (max-width: 760px) { .credits { text-align: left; } }
+  .badges { display: flex; gap: 6px; flex-wrap: wrap; }
+  .badge { width: 88px; height: 31px; display: grid; place-items: center; text-align: center; line-height: 1; font: 400 8px/1 var(--px); text-transform: uppercase; color: #fff;
+    box-shadow: inset 0 0 0 1px #000, inset 2px 2px 0 rgba(255, 255, 255, .45), inset -2px -2px 0 rgba(0, 0, 0, .5); }
+  .badge.b1 { background: linear-gradient(180deg, #4870ff 0 50%, #1438b0 50%); } .badge.b2 { background: linear-gradient(180deg, #ffe040 0 50%, #e08a00 50%); color: var(--ink); }
+  .badge.b3 { background: #000; color: #6af06a; } .badge.b4 { background: linear-gradient(180deg, #d0d0d0 0 50%, #8a8a8a 50%); color: #111; }
+  .counter { display: inline-flex; gap: 2px; margin-left: 6px; vertical-align: middle; }
+  .counter i { font: 700 16px/1 var(--px); font-style: normal; background: #000; color: #ff3b1f; padding: 2px 3px; box-shadow: inset 0 0 0 1px #3a0a04; }
+
+  /* ------------------------------------------------------- settings, mods */
+  .opts { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 18px; margin-top: 8px; }
+  @media (max-width: 600px) { .opts { grid-template-columns: 1fr; } }
+  .opt { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; align-items: start; padding: 7px 8px; cursor: pointer; background: rgba(1, 6, 36, .55); box-shadow: inset 2px 0 0 #2c3c94; }
+  .opt:hover { box-shadow: inset 2px 0 0 var(--gold); }
+  .opt b { display: block; color: #fff; font: 700 16px/1.25 var(--px); text-transform: uppercase; }
+  .opt i { display: block; font-style: normal; color: var(--muted); font-size: 11px; line-height: 1.4; }
+  .opt.sel { grid-template-columns: 1fr; cursor: default; }
+  .opt input[type=checkbox] { appearance: none; -webkit-appearance: none; width: 18px; height: 18px; margin: 1px 0 0; background: #010624; cursor: pointer;
+    box-shadow: inset 2px 2px 0 #000, inset -2px -2px 0 #34489c; }
+  .opt input[type=checkbox]:checked { background: linear-gradient(var(--gold), var(--gold)) 5px 5px / 8px 8px no-repeat, #010624; }
+  .opt select { background: #010624; color: var(--text); border: 0; border-radius: 0; padding: 5px 7px; font: 13px var(--ui); width: 100%; box-shadow: inset 2px 2px 0 #000, inset -2px -2px 0 #34489c; }
+  .opt .range { display: flex; align-items: center; gap: 10px; } .opt input[type=range] { flex: 1; accent-color: var(--gold); } .opt output { min-width: 3.2em; color: var(--gold); font: 700 16px var(--px); }
+  .modsmall { font-size: 11px; color: var(--muted); } .modsmall b { color: #fff; }
+  #mods .opt { margin-top: 6px; } #mods-line { margin: 8px 0 0; font-weight: bold; } #mods-line.err { color: var(--err); }
+
+  /* -------------------------------------------------------------- in game */
+  #screen { display: none; position: fixed; inset: 0; z-index: 2; width: 100vw; height: 100vh; background: #000; }
+  canvas#canvas { width: 100%; height: 100%; display: block; image-rendering: auto; }
+  #fps { position: fixed; z-index: 3; right: 10px; bottom: 8px; color: #fff9; font: 400 16px var(--px); pointer-events: none; }
+  #hint { position: fixed; z-index: 3; left: 12px; bottom: 8px; color: #fff8; font: 400 16px var(--px); pointer-events: none; text-transform: uppercase; }
+  #fullscreen { position: fixed; z-index: 4; right: 8px; top: 8px; width: 34px; height: 34px; display: grid; place-items: center; padding: 0;
+    background: rgba(0, 0, 0, .45); box-shadow: inset 0 0 0 2px #fff4; color: #fffc; opacity: .55; text-shadow: none; }
+  #fullscreen:hover, #fullscreen:focus-visible { opacity: 1; }
+  #fullscreen[hidden] { display: none; }
+  #fullscreen svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: square; shape-rendering: crispEdges; }
+  #fullscreen .fs-off, body.fs #fullscreen .fs-on { display: none; }
+  body.fs #fullscreen .fs-off { display: inline; }
+  body.locked #fullscreen { opacity: 0; pointer-events: none; }
+  #netbadge { position: fixed; left: 10px; top: 8px; z-index: 4; color: #fff; padding: 5px 12px 4px 16px; font: 700 16px/1 var(--px); cursor: pointer; max-width: 70vw; text-shadow: 2px 2px 0 #000;
+    clip-path: var(--pill); background: linear-gradient(90deg, var(--gold) 0 4px, transparent 4px), linear-gradient(180deg, rgba(60, 90, 220, .9), rgba(10, 20, 90, .9)); }
+  #log { margin-top: 12px; max-height: 220px; overflow: auto; background: rgba(0, 0, 16, .85); box-shadow: inset 2px 2px 0 #000, inset -2px -2px 0 #24328a; padding: 8px;
+    font: 12px/1.4 ui-monospace, "Courier New", monospace; color: #9fb0e6; white-space: pre-wrap; word-break: break-all; -webkit-font-smoothing: auto; }
+  #log:empty { display: none; }
+  .logtoggle { margin: 8px 0 0; font-size: 11px; } .logtoggle a { color: var(--muted); }
+  #log.overlay { position: fixed; right: 8px; top: 8px; width: min(560px, 90vw); max-height: 40vh; margin: 0; z-index: 5; }
+
+  /* start page activity (main.js setupActivity) */
+  #activity { margin: 10px 0 4px; }
+  .live { margin: 0 0 4px; color: var(--muted); font-weight: bold; font-size: 12px; }
+  .live.on { color: var(--ok); } .live.on::before { content: "■ "; animation: pulse 1s steps(2, jump-none) infinite; }
+  @keyframes pulse { 50% { opacity: .2; } }
+  #live-names { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
+  .ntag { font-size: 11px; padding: 1px 7px; background: #16246e; color: #c8d2ff; }
+  .ntag.racing { background: var(--gold); color: var(--ink); font-weight: bold; }
+  #daily { margin: 6px 0; font-size: 12px; } #daily b { color: var(--gold); } #daily .live { color: var(--ok); display: inline; animation: pulse 1s steps(2, jump-none) infinite; }
+  #notify.on { color: var(--ok); }
+  #top { margin-top: 8px; } .tabs { display: flex; gap: 4px; }
+  .tabs button { font-size: 16px; padding: 2px 8px; background: #0b1656; color: var(--muted); box-shadow: inset 0 0 0 2px #24348a; clip-path: none; text-shadow: none; }
+  .tabs button.on { background: var(--gold); color: var(--ink); box-shadow: none; }
+  #top-list { list-style: none; margin: 4px 0 0; padding: 0; font-size: 12px; }
+  #top-list li { display: grid; grid-template-columns: 1.8em 1fr auto; gap: 6px; padding: 2px 4px; border-top: 2px solid #0e1a5c; }
+  #top-list .r { color: var(--muted); text-align: right; font-family: var(--px); } #top-list li:nth-child(1) .r { color: var(--gold); } #top-list .f { color: var(--ok); }
+  #update { margin-bottom: 10px; }
+  /* loading cover over the game until it really draws, and the small badge for later stalls */
+  #loading { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; text-align: center;
+    background: radial-gradient(ellipse at 50% 45%, #0e2fa8 0%, #030b3d 60%, #010622 100%); }
+  #loading[hidden], #loadbadge[hidden] { display: none; }
+  #loading .ltitle { font: 700 32px/1.1 var(--px); color: var(--gold); text-transform: uppercase; font-style: italic; text-shadow: 2px 2px 0 var(--rust), 4px 4px 0 #000820; }
+  #loading-text { margin-top: 10px; color: #d0daff; font: 400 16px var(--px); text-transform: uppercase; }
+  .lbar { width: 224px; height: 10px; margin: 14px auto 0; background: #020820; box-shadow: inset 2px 2px 0 #000, inset -2px -2px 0 #2a3c94; overflow: hidden; }
+  .lbar i { display: block; width: 64px; height: 100%; background: repeating-linear-gradient(90deg, var(--gold) 0 6px, var(--amber) 6px 8px); animation: lmove 1.2s steps(14) infinite; }
+  @keyframes lmove { from { transform: translateX(-64px); } to { transform: translateX(224px); } }
+  #loadbadge { position: fixed; right: 12px; bottom: 12px; z-index: 20; font: 700 16px/1 var(--px); color: var(--ink); background: var(--gold); padding: 4px 10px; text-transform: uppercase; clip-path: var(--notch); }
+  @media (prefers-reduced-motion: reduce) { .lbar i, .live.on::before, #daily .live, .ticker span, .mbtn.go:hover { animation: none !important; } }
+</style>
+</head>
+<body>
+<div id="bg" aria-hidden="true"><canvas id="bgc" width="480" height="300"></canvas><div class="scan"></div></div>
+
+<main id="setup-wrap">
+  <header>
+    <h1 class="sr">Need for Speed II: Special Edition, web runtime</h1>
+    <canvas id="logo" width="360" height="90" aria-hidden="true"></canvas>
+  </header>
+
+  <div class="layout">
+    <nav class="menu" aria-label="Game">
+      <button id="start" class="mbtn go" hidden>Start Game</button>
+      <label class="btn mbtn" id="pick-label" hidden>Choose NFS II SE Folder…<input type="file" id="pick" webkitdirectory multiple></label>
+      <a class="mbtn" href="#online">Online Play…</a>
+      <a class="mbtn" href="#settings">Settings…</a>
+            <a class="mbtn" href="#guide">How to Race…</a>
+      <a class="mbtn" href="#work">What We Built…</a>
+      <a class="mbtn" href="#about">Read Me…</a>
+      <div class="sep"></div>
+      <button id="forget" class="mbtn dim" hidden>Remove Game Files</button>
+      <div class="hint">Game files download automatically and are cached in this browser.</div>
+      <div class="hint" id="pad"></div>
+      <div class="tip"><b>Tip of the day</b><span id="tip">Brake before the corner, not in it.</span></div>
+      <div class="maker"><b>Created by</b>
+        <a href="https://github.com/mrz944" target="_blank" rel="noopener">Marcin Zadka</a></div>
+    </nav>
+
+    <div class="panels" id="setup">
+      <div id="update" class="card" hidden>A newer version of the game is on the server. <button id="update-reload" class="small">Reload to update</button></div>
+      <section class="panel">
+        <div class="ph"><h2>Status</h2></div>
+        <div class="pb">
+          <p id="status"></p>
+          <progress id="progress" max="1" value="0" hidden></progress>
+          <div id="log" hidden></div>
+          <p class="logtoggle"><a href="#" id="log-toggle">Show technical log</a></p>
+        </div>
+      </section>
+
+      <section class="panel" id="online">
+        <div class="ph"><h2>Online Play</h2><span id="server-state" class="pill">connecting…</span></div>
+        <div class="pb">
+          <div class="namebox">
+            <label for="pname">Your name</label>
+            <input id="pname" maxlength="10" autocomplete="nickname" placeholder="Player1234" title="Up to 10 letters, digits and . _ - !. Used in the lobby and in the game.">
+            <span class="muted">Racers online:<span class="counter" id="online-count"><i>0</i><i>0</i><i>0</i></span></span>
+          </div>
+          <p id="lobby-msg" class="msg" hidden></p>
+
+          <div id="activity">
+            <p id="live-line" class="live">…</p>
+            <div id="live-names"></div>
+            <p id="daily" hidden></p>
+            <button id="notify" class="small secondary" hidden>🔔 Notify me when people race</button>
+            <div id="top" hidden>
+              <div class="bar"><h3>Most Active Racers</h3>
+                <div id="top-tabs" class="tabs"><button data-w="24h">24h</button><button data-w="7d" class="on">7 days</button><button data-w="all">All</button></div></div>
+              <ol id="top-list"></ol>
+            </div>
+          </div>
+
+          <section id="lobby">
+            <div class="bar">
+              <h3>Rooms</h3>
+              <button id="show-create" class="small">Create Room</button>
+            </div>
+            <form id="create-form" class="card" hidden autocomplete="off">
+              <div class="grid">
+                <label>Room name <input id="c-name" maxlength="32" placeholder="My room"></label>
+                <label>Password <input id="c-pass" type="password" maxlength="64" placeholder="none"></label>
+                <label>Players <select id="c-max"><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option selected>8</option></select></label>
+                <label class="check"><input id="c-listed" type="checkbox" checked> Show in the room list</label>
+              </div>
+              <div class="actions"><button type="submit" class="small">Create</button><button type="button" id="c-cancel" class="small secondary">Cancel</button></div>
+            </form>
+            <form id="pass-form" class="card" hidden autocomplete="off">
+              <label><span id="pass-label">Password</span> <input id="j-pass" type="password" maxlength="64"></label>
+              <div class="actions"><button type="submit" class="small">Join</button><button type="button" id="j-cancel" class="small secondary">Cancel</button></div>
+            </form>
+            <div class="tablewrap">
+              <table id="rooms">
+                <thead><tr><th>Room</th><th>Players</th><th title="Estimated round trip through the server; a direct connection is usually faster">Ping</th><th></th></tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+            <p id="rooms-empty" class="muted">No open rooms yet. Create one and invite your friends.</p>
+          </section>
+
+          <section id="inroom" hidden>
+            <div class="bar">
+              <h3 id="room-title"></h3>
+              <button id="leave-room" class="small secondary">Leave Room</button>
+            </div>
+            <ul id="members"></ul>
+            <p id="best-host" class="muted"></p>
+            <div id="share"><code id="share-link"></code><button id="copy-link" class="small secondary">Copy invite link</button></div>
+            <p class="howto">Everyone clicks <b>Start Game</b>. In the game, pick <b>Network</b> (IPX) as the game type. One player
+              (ideally the best host) creates the game; the others join it.</p>
+          </section>
+        </div>
+      </section>
+
+      <section class="panel" id="settings">
+        <div class="ph"><h2>Game Settings</h2><button id="set-reset" class="small secondary" title="Back to the default settings">Defaults</button></div>
+        <div class="pb">
+          <p class="muted">Used every time you click <b>Start Game</b>, saved in this browser. Car, controls, sound and detail are in the game's own Options menu.</p>
+          <div class="opts">
+            <label class="opt"><input type="checkbox" data-set="fullscreen"><span><b>Start in fullscreen</b><i>Alt+Enter switches during the game.</i></span></label>
+            <label class="opt"><input type="checkbox" data-set="fps"><span><b>FPS counter</b><i>Frames per second, bottom right.</i></span></label>
+                                    <label class="opt"><input type="checkbox" data-set="pads"><span><b>Gamepads and wheels</b><i>Off keeps the keyboard as player 1 with a controller plugged in.</i></span></label>
+            <label class="opt sel"><b>Resolutions</b><select data-set="screen">
+              <option value="auto" id="set-screen-auto">Up to this screen</option>
+              <option value="1280x720">Up to 1280×720</option><option value="1600x900">Up to 1600×900</option>
+              <option value="1920x1080">Up to 1920×1080</option><option value="2560x1440">Up to 2560×1440</option><option value="3840x2160">Up to 3840×2160</option>
+            </select><i>What the game offers in Options › Graphics. Lower is faster on weak GPUs.</i></label>
+            <label class="opt sel"><b>Sharpness</b><select data-set="quality">
+              <option value="auto">Auto</option><option value="1">Fast (1×)</option><option value="2">Balanced (2×)</option><option value="3">Sharp (3×)</option><option value="4">Sharpest (4×)</option>
+            </select><i>How many times the game picture is rendered over before it's scaled to the screen. Auto lowers it when the GPU falls behind.</i></label>
+            <label class="opt sel"><b>Volume</b><span class="range"><input type="range" min="0" max="100" step="5" data-set="volume"><output id="set-volume-out">100%</output></span><i>On top of the game's own sound settings.</i></label>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel" id="mods" hidden>
+        <div class="ph"><h2>Mods</h2><span id="mods-count" class="pill">off</span></div>
+        <div class="pb">
+          <label class="opt"><input type="checkbox" id="mods-on"><span><b>rata_536's remastered cars</b><i>Every car in the game
+            rebuilt in higher quality: new models and textures, new sounds, real colours and gearing that no longer skips shifts, plus
+            the police and traffic cars and PSX-style loading slides. A few cars also handle closer to the real thing.</i></span></label>
+          <p id="mods-line" class="muted"></p>
+          <progress id="mods-bar" max="1" value="0" hidden></progress>
+          <p class="modsmall"><b>Included:</b> <span id="mods-list"></span></p>
+          <p class="modsmall">Made by <a href="https://www.nfsaddons.com/downloads/all/all/author:rata-536/" target="_blank" rel="noopener">rata_536</a>
+            (their mods on NFSAddons). Racing online? Everyone in the race should have the same setting.</p>
+        </div>
+      </section>
+
+      <section class="panel" id="guide">
+        <div class="ph"><h2>How to Race Online</h2></div>
+        <div class="pb">
+          <ol class="steps">
+            <li><b>Get the game into this browser.</b> Wait for the game files to download automatically.
+              This happens once; next time they are already cached here.</li>
+            <li><b>Pick a name.</b> Type it under <i>Online Play → Your name</i>. It's what the others see in the room.</li>
+            <li><b>Make a room.</b> One player clicks <i>Create Room</i>, gives it a name, and optionally a password and a player limit (2–8).
+              Untick <i>Show in the room list</i> for a private room.</li>
+            <li><b>Bring your friends in.</b> Click <i>Copy invite link</i> and send it, or let them pick the room in the <i>Rooms</i> list and click <i>Join</i>.
+              Everyone in the room is listed with their ping and <i>direct</i> or <i>via server</i>.</li>
+            <li><b>Everyone clicks Start Game.</b> Wait until all players see the game's menu.</li>
+            <li><b>Host the race.</b> The player shown as <i>Best host</i> sets the game type to <b>Network</b> (IPX) and creates the game.</li>
+            <li><b>Join the race.</b> The others set the game type to <b>Network</b> (IPX) and join the game.</li>
+            <li><b>Race.</b> The host picks the track and starts. The badge at the top left shows the room and each racer's ping. Click it to copy the invite link.</li>
+          </ol>
+          <dl class="specs">
+            <dt>Lag</dt><dd>Your own car reacts at once; the other cars show up about half a ping late. The lowest-ping player still makes the best host.</dd>
+            <dt>Via server</dt><dd>If two browsers can't connect directly (strict routers), packets go through this server instead. It works, just a little slower.</dd>
+            <dt>Keep it visible</dt><dd>Leave every game window open while racing. A minimised tab can fall behind.</dd>
+            <dt>Names</dt><dd>The name inside the game's own lobby is set under <i>Player One</i> in the game's main menu. Change it there to match.</dd>
+            <dt>Controllers</dt><dd>Gamepads and wheels work: turn them on in <i>Game Settings</i>, press a button on yours before <i>Start Game</i> (the browser only shows it after a press), then set it up in <b>Options → Controllers</b>. On a pad the triggers are gas and brake and Start pauses.</dd>
+          </dl>
+        </div>
+      </section>
+
+      <section class="panel" id="work">
+        <div class="ph"><h2>Original Game · Our Work</h2></div>
+        <div class="pb">
+          <div class="twocol">
+            <div>
+              <h3 class="minor">Untouched: the real NFS II SE</h3>
+              <ul class="ticks">
+                <li><b>Handling and physics:</b> every car drives exactly like on a 1997 PC. The original code runs, recompiled, not rewritten or re-tuned.</li>
+                <li><b>Cars, tracks and AI:</b> the original game data and opponent logic, the Special Edition cars and tracks included.</li>
+                <li><b>Music and sound:</b> the original soundtrack and effects through the game's own sound engine.</li>
+                <li><b>Menus and modes:</b> Single Race, Tournament, Knockout, Showcase, as you remember them.</li>
+              </ul>
+            </div>
+            <div>
+              <h3 class="minor">Added: what makes it run here</h3>
+              <ul class="ticks plus">
+                <li><b>Static recompilation:</b> the game's x86 code is translated to C and WebAssembly, so it runs natively in the browser with no PC emulator.</li>
+                <li><b>Voodoo on your GPU:</b> the 3dfx Glide&nbsp;2 graphics path is redrawn with WebGL 2, keeping the Voodoo fog, depth and blending, and scaled up sharply.</li>
+                <li><b>Internet multiplayer:</b> the game's LAN mode now works over the internet. Rooms with passwords and a room browser,
+                  direct browser-to-browser links with relay fallback, and a best-host pick so the lag goes to the fewest players.</li>
+                <li><b>Browser comfort:</b> one-time download into browser storage, mouse capture, audio, smart pacing when the tab is hidden.</li>
+              </ul>
+            </div>
+          </div>
+          <p class="muted credit-line">The game runs from the original 3dfx executable of the Special Edition CD (NFS2SEA.EXE).
+            <a href="https://github.com/zaps166/NFSIISE" target="_blank" rel="noopener">NFSIISE</a> by zaps166 was a helpful reference.</p>
+        </div>
+      </section>
+
+      <section class="panel" id="about">
+        <div class="ph"><h2>Read Me</h2></div>
+        <div class="pb">
+          <p>This page runs <b>Need for Speed II: Special Edition</b> (PC, 3dfx version) straight in your browser: the original
+            game code is recompiled to WebAssembly, and the Voodoo graphics go through WebGL.
+            Game files download from this server automatically and are cached in this browser for future visits.</p>
+          <dl class="specs">
+            <dt>Browser</dt><dd>Chrome, Edge, Firefox or Safari with WebGL&nbsp;2</dd>
+            <dt>Controls</dt><dd>Keyboard like the original; click the picture to capture the mouse, Esc releases it</dd>
+            <dt>Online</dt><dd>Up to 8 racers per room, direct browser-to-browser links with relay fallback</dd>
+            <dt>Storage</dt><dd>About 530&nbsp;MB for the game files</dd>
+          </dl>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <div class="ticker" aria-hidden="true"><span>
+    <b>NEWS</b> &nbsp;·&nbsp; Need for Speed II SE now runs in the browser &nbsp;·&nbsp;
+    <b>TIP</b> &nbsp;·&nbsp; Let the player with the lowest ping host the race &nbsp;·&nbsp;
+    <b>NEWS</b> &nbsp;·&nbsp; 3dfx Voodoo graphics now run on your GPU through WebGL 2 &nbsp;·&nbsp;
+  </span></div>
+
+  <footer>
+    <div class="badges" aria-hidden="true">
+      <div class="badge b1">WebGL 2.0<br>Accelerated</div>
+      <div class="badge b2">Best viewed<br>1024×768</div>
+      <div class="badge b3">WASM<br>inside</div>
+      <div class="badge b4">Open page<br>and race</div>
+    </div>
+    <div class="credits">
+      <div>Fan-made runtime · not affiliated with Electronic Arts</div>
+    </div>
+  </footer>
+</main>
+
+<div id="screen"><canvas id="canvas" width="640" height="480"></canvas></div>
+<div id="fps" hidden></div>
+<div id="netbadge" hidden title="Click to copy the room link"></div>
+<button id="fullscreen" type="button" hidden title="Fullscreen (Alt+Enter)" aria-label="Fullscreen"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path class="fs-on" d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" /><path class="fs-off" d="M9 4v5H4M20 9h-5V4M15 20v-5h5M4 15h5v5" /></svg></button>
+<div id="hint" hidden>Click to capture the mouse · Esc releases it · Alt+Enter fullscreen</div>
+<div id="loading" hidden><div><div class="ltitle">Need for Speed III</div><div id="loading-text">Loading the game…</div><div class="lbar"><i></i></div></div></div>
+<div id="loadbadge" hidden>Loading…</div>
+<script>
+// Lo-fi look (see the comment at the top): the backdrop and the logo are drawn at low resolution
+// with an ordered (Bayer) dither to a small palette and shown scaled up with hard pixels.
+(() => {
+  const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map((v) => (v + .5) / 16);
+  const hex = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+  const RAMP = ['#000418', '#010a30', '#03124e', '#05196e', '#08218e', '#0c2cac', '#1438c4', '#1e48d8', '#3060e8', '#4c7cf4', '#7aa4ff', '#b0ccff'].map(hex);
+  const BLUES = [];                                                             // 34 shades: a gentle dither, not a blocky one
+  for (let i = 0; i < RAMP.length - 1; i++) for (let k = 0; k < 3; k++) BLUES.push(RAMP[i].map((v, c) => Math.round(v + (RAMP[i + 1][c] - v) * k / 3)));
+  BLUES.push(RAMP.at(-1));
+  const GOLD = ['#5a2400', '#a04800', '#e07800', '#ff9c00', '#ffc000', '#ffd800', '#fff080'].map(hex);
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // ---- backdrop: big rings around a glow, a rotating segmented ring, a gold arc, stripes
+  const bg = document.getElementById('bgc'), bx = bg.getContext('2d');
+  let W = 480, H = 300, img = null;
+  function size() {
+    H = Math.max(210, Math.min(640, Math.round(W * innerHeight / Math.max(1, innerWidth))));
+    if (bg.height !== H) { bg.width = W; bg.height = H; }
+    img = bx.createImageData(W, H);
+  }
+  function arcY(x) { const t = (x - .45 * W) / (.55 * W); return Math.min(W * .1, H * .16) + W * .16 * t * t; }   // sweeps down to the right, behind the header
+  function drawBg(t) {
+    const d = img.data, cx = .68 * W, cy = .46 * H, R = Math.max(W, H * 1.2);
+    const rot = reduce ? 0 : t * .00012;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const dx = (x - cx) / R, dy = (y - cy) / R * 1.1, r = Math.hypot(dx, dy), a = Math.atan2(dy, dx);
+      let v = Math.max(0, 1 - r / .62) ** 1.6 * .78 + .04;                      // glow
+      if (r > .47 && r < .60) v += .07 - Math.abs(r - .535) * .6;              // outer ring
+      if (r > .29 && r < .33) { const s = ((a + rot) / (Math.PI / 4) % 1 + 1) % 1; v += s < .3 ? .16 : .04; }  // segmented ring
+      if (r > .17 && r < .19) { const s = ((a - rot * 1.6) / (Math.PI / 2) % 1 + 1) % 1; v += s < .55 ? .1 : 0; }
+      if (x > W * .8 && y % 3 === 0) v += (x - W * .8) / (W * .2) * .08;       // right stripes
+      const k = BAYER[(y & 3) * 4 + (x & 3)];
+      const i = Math.max(0, Math.min(BLUES.length - 1, Math.floor(v * (BLUES.length - 1) + k - .5)));
+      const c = BLUES[i], o = (y * W + x) * 4;
+      d[o] = c[0]; d[o + 1] = c[1]; d[o + 2] = c[2]; d[o + 3] = 255;
+    }
+    if (W > H * 1.2) for (let x = Math.round(W * .45); x < W; x++) {           // gold arc (landscape only), fading in from the left
+      const y = Math.round(arcY(x)), f = (x - W * .45) / (W * .14);
+      for (let w = 0; w < 3; w++) {
+        if (y + w < 0 || y + w >= H || f < BAYER[((y + w) & 3) * 4 + (x & 3)]) continue;
+        const c = GOLD[w === 1 ? 5 : 3], o = ((y + w) * W + x) * 4;
+        d[o] = c[0]; d[o + 1] = c[1]; d[o + 2] = c[2];
+      }
+    }
+    bx.putImageData(img, 0, 0);
+  }
+  let last = 0;
+  function frame(t) {
+    const live = !document.hidden && !document.getElementById('bg').hidden;
+    if (live && t - last >= 83) { last = t; drawBg(t); }                      // 12 fps, like it's 1998
+    if (!reduce) requestAnimationFrame(frame);
+  }
+  size(); drawBg(0); requestAnimationFrame(frame);
+  addEventListener('resize', () => { size(); drawBg(performance.now()); });
+
+  // ---- logo: an orb with a chrome "II", chrome NEED FOR SPEED, gold SPECIAL EDITION
+  const lg = document.getElementById('logo'), lx = lg.getContext('2d', { willReadFrequently: true });
+  const LW = lg.width, LH = lg.height, K = LW / 240;                         // laid out on a 240x60 grid
+  function chrome(y0, y1) {
+    const g = lx.createLinearGradient(0, y0, 0, y1);
+    g.addColorStop(0, '#ffffff'); g.addColorStop(.42, '#a8d0ff'); g.addColorStop(.5, '#1c3a98'); g.addColorStop(.62, '#5a8cf0'); g.addColorStop(1, '#e4f2ff');
+    return g;
+  }
+  function gold(y0, y1) {
+    const g = lx.createLinearGradient(0, y0, 0, y1);
+    g.addColorStop(0, '#fff6a0'); g.addColorStop(.45, '#ffd800'); g.addColorStop(.75, '#ff9c00'); g.addColorStop(1, '#c05000');
+    return g;
+  }
+  function word(text, x, y, px, fill, font = 'Russo One') {
+    lx.save(); lx.translate(x, y); lx.transform(1, 0, -.22, 1, 0, 0);           // italic slant
+    lx.font = `${px}px "${font}", "Arial Black", Impact, sans-serif`; lx.textBaseline = 'alphabetic';
+    lx.lineJoin = 'round'; lx.lineWidth = 3; lx.strokeStyle = '#000a34'; lx.strokeText(text, 0, 0);
+    lx.fillStyle = fill; lx.fillText(text, 0, 0); lx.restore();
+  }
+  function drawLogo() {
+    lx.setTransform(1, 0, 0, 1, 0, 0); lx.clearRect(0, 0, LW, LH); lx.setTransform(K, 0, 0, K, 0, 0);
+    const ox = 29, oy = 30, or = 27;                                        // the orb
+    const sg = lx.createRadialGradient(ox - 9, oy - 10, 2, ox, oy, or);
+    sg.addColorStop(0, '#c0dcff'); sg.addColorStop(.25, '#4b8dff'); sg.addColorStop(.6, '#1442c8'); sg.addColorStop(1, '#041568');
+    lx.beginPath(); lx.arc(ox, oy, or + 3, 0, 7); lx.fillStyle = '#000a34'; lx.fill();
+    lx.beginPath(); lx.arc(ox, oy, or + 1, 0, 7); lx.fillStyle = '#4d7cff'; lx.fill();
+    lx.beginPath(); lx.arc(ox, oy, or - 1, 0, 7); lx.fillStyle = sg; lx.fill();
+    lx.beginPath(); lx.arc(ox, oy, or - 7, 3.6, 5.3); lx.strokeStyle = 'rgba(200,225,255,.55)'; lx.lineWidth = 2; lx.stroke();
+    word('II', ox - 10, oy + 9, 26, chrome(oy - 11, oy + 9));
+    word('NEED FOR SPEED', 64, 27, 18, chrome(13, 27));
+    word('SPECIAL EDITION', 66, 46, 13, gold(34, 46));
+    lx.save(); lx.font = '8px Silkscreen, monospace'; lx.fillStyle = '#8cc4ff'; lx.fillText('WEB RUNTIME · ONLINE', 69, 57); lx.restore();
+    lx.setTransform(1, 0, 0, 1, 0, 0);
+    const id = lx.getImageData(0, 0, LW, LH), d = id.data;                     // hard edges, 8 levels per channel, dithered
+    for (let y = 0; y < LH; y++) for (let x = 0; x < LW; x++) {
+      const o = (y * LW + x) * 4, k = BAYER[(y & 3) * 4 + (x & 3)];
+      if (d[o + 3] < 110) { d[o + 3] = 0; continue; }
+      const a = d[o + 3] / 255;
+      for (let c = 0; c < 3; c++) { const v = d[o + c] / 255 * a; d[o + c] = Math.min(7, Math.floor(v * 7 + k)) * 255 / 7; }
+      d[o + 3] = 255;
+    }
+    lx.putImageData(id, 0, 0);
+  }
+  function fitLogo() {
+    const s = innerWidth >= 900 ? 2 : 1;                                        // whole pixels only (2 px blocks on desktop)
+    lg.style.width = LW * s + 'px';
+  }
+  fitLogo(); drawLogo(); addEventListener('resize', fitLogo);
+  Promise.all(['18px "Russo One"', '8px Silkscreen'].map((f) => document.fonts.load(f))).then(drawLogo, () => {});
+})();
+</script>
+<script type="module" src="main.js"></script>
+</body>
+</html>
