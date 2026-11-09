@@ -1,21 +1,164 @@
-<!doctype html><html><head><style>
-<!-- Source of web/icons/og.png (1200x630 share image): open it in a browser at 1200x630 and screenshot. -->
+<!doctype html>
+<!-- Source of the share images, drawn like the start page (dithered globe, drafting sheet, gold banner):
+       web/icons/og.png            1200x630, the page's og:image   (og-card.html?w=1200&h=630)
+       docs/social-preview.png     1280x640, GitHub social preview (og-card.html?w=1280&h=640)
+     Render: tools/og.sh (headless Chromium screenshot at that window size). -->
+<html><head><meta charset="utf-8"><title>NFS II SE share card</title><style>
 @font-face{font-family:Oswald;font-weight:300;src:url(../web/fonts/oswald-latin-300-normal.woff2)}
 @font-face{font-family:Oswald;font-weight:400;src:url(../web/fonts/oswald-latin-400-normal.woff2)}
 @font-face{font-family:Oswald;font-weight:700;src:url(../web/fonts/oswald-latin-700-normal.woff2)}
-body{margin:0;width:1200px;height:630px;overflow:hidden;font-family:Oswald;background:radial-gradient(circle at 900px 330px,#7a2c0c 0,#3a1606 230px,#1e0e04 330px,#120802 70%);position:relative}
-.sheet{position:absolute;left:0;top:0;bottom:0;width:430px;background:
- repeating-radial-gradient(circle at 20% 80%,transparent 0 70px,rgba(90,40,4,.22) 70px 72px),
- linear-gradient(90deg,rgba(90,40,4,.14) 1px,transparent 1px) 0 0/40px 40px,linear-gradient(0deg,rgba(90,40,4,.14) 1px,transparent 1px) 0 0/40px 40px,
- linear-gradient(165deg,#f4bd56,#e39a32 40%,#cf7d1e 75%,#b9661a)}
-.sheet:after{content:"";position:absolute;right:0;top:0;bottom:0;width:34px;background:repeating-linear-gradient(176deg,#ffd977 0 3px,#e9a52e 3px 9px,#8a4a0c 9px 10px,transparent 10px 17px),linear-gradient(90deg,#6a3208,#2a1204)}
-.menu{position:absolute;right:70px;top:120px;text-align:right;color:#2a1304;font-weight:300;font-size:44px;line-height:1.2}
-.menu b{display:block;font-weight:700;font-size:84px;line-height:1.05;color:#fff4dc;text-shadow:0 0 4px #fff,0 0 22px rgba(255,230,170,.9)}
-.ring{position:absolute;left:660px;top:70px;width:480px;height:480px;border-radius:50%;border:2px solid rgba(246,196,68,.3)}
-.mark{position:absolute;left:468px;top:170px;transform:skewX(-10deg)}
-.ii{position:absolute;left:0;top:-20px;font-weight:700;font-size:200px;line-height:1;background:linear-gradient(#fff3c0,#f6c444 45%,#a8580e 55%,#f2b63a);-webkit-background-clip:text;color:transparent;-webkit-text-stroke:6px #1c0b02;paint-order:stroke fill}
-.nfs{position:absolute;left:150px;top:30px;white-space:nowrap;font-weight:700;font-size:70px;line-height:1;background:linear-gradient(#fff,#d8d2c4 45%,#5a4a38 50%,#b8ab94 62%,#fff6e0);-webkit-background-clip:text;color:transparent}
-.se{position:absolute;left:156px;top:118px;white-space:nowrap;font-weight:400;font-size:32px;letter-spacing:9px;color:#f6c444}
-.sub{position:absolute;left:158px;top:172px;white-space:nowrap;font-weight:300;font-size:26px;letter-spacing:3px;color:#ffe9a8}
-</style></head><body><div class="sheet"><div class="menu">online play<br>settings<br><b>RACE</b>read me</div></div><div class="ring"></div>
-<div class="mark"><div class="ii">II</div><div class="nfs">NEED FOR SPEED</div><div class="se">SPECIAL EDITION</div><div class="sub">play in your browser · online races</div></div></body></html>
+@font-face{font-family:Silkscreen;font-weight:400;src:url(../web/fonts/silkscreen-latin-400-normal.woff2)}
+@font-face{font-family:Silkscreen;font-weight:700;src:url(../web/fonts/silkscreen-latin-700-normal.woff2)}
+:root{--night:#120802;--gold:#f6c444;--pale:#ffe9a8;--cream:#fff4dc;--ink:#2a1304;--text:#f3e3c3;--hi:#7a3a0e;--lo:#080300;
+ --notch:polygon(0 4px,2px 4px,2px 2px,4px 2px,4px 0,calc(100% - 4px) 0,calc(100% - 4px) 2px,calc(100% - 2px) 2px,calc(100% - 2px) 4px,100% 4px,100% calc(100% - 4px),calc(100% - 2px) calc(100% - 4px),calc(100% - 2px) calc(100% - 2px),calc(100% - 4px) calc(100% - 2px),calc(100% - 4px) 100%,4px 100%,4px calc(100% - 2px),2px calc(100% - 2px),2px calc(100% - 4px),0 calc(100% - 4px));
+ --slant:polygon(0 0,100% 0,100% 4px,calc(100% - 4px) 4px,calc(100% - 4px) 16px,calc(100% - 8px) 16px,calc(100% - 8px) 28px,calc(100% - 12px) 28px,calc(100% - 12px) 40px,calc(100% - 16px) 40px,calc(100% - 16px) 100%,0 100%);
+ --para:polygon(12px 0,100% 0,100% 8px,calc(100% - 4px) 8px,calc(100% - 4px) 20px,calc(100% - 8px) 20px,calc(100% - 8px) 100%,0 100%,0 calc(100% - 8px),4px calc(100% - 8px),4px calc(100% - 20px),8px calc(100% - 20px),8px 8px,12px 8px)}
+*{box-sizing:border-box}
+html,body{margin:0;overflow:hidden;background:var(--night)}
+body{position:relative;-webkit-font-smoothing:none}
+canvas{position:absolute;image-rendering:pixelated}
+#bg{left:0;top:0}
+.scan{position:absolute;inset:0;background:repeating-linear-gradient(0deg,rgba(0,0,0,.16) 0 1px,transparent 1px 3px)}
+#sheet{box-shadow:6px 6px 0 rgba(0,0,0,.5)}
+.menu{position:absolute;text-align:right;color:var(--ink);font:300 34px/1.2 Oswald;-webkit-font-smoothing:antialiased}
+.menu b{display:block;font:700 52px/1.1 Oswald;margin-bottom:10px;white-space:nowrap;text-shadow:2px 2px 0 rgba(255,245,210,.5)}
+.menu .dots{border-top:3px dotted rgba(42,19,4,.55);margin:14px 0 8px 40px}
+.menu small{display:block;font:400 18px/1.3 Silkscreen;color:#5a2a0a;-webkit-font-smoothing:none}
+.panel{position:absolute;clip-path:var(--notch);background:linear-gradient(180deg,rgba(44,20,5,.95) 0 80px,rgba(28,12,3,.95) 80px);box-shadow:inset 4px 4px 0 var(--hi),inset -4px -4px 0 var(--lo)}
+.ph{position:relative;height:60px;padding:0 30px 0 74px;display:flex;align-items:center;clip-path:var(--slant);
+ background:linear-gradient(180deg,#fff3c0 0 4px,#ffd860 4px 14px,#f6c444 14px 28px,#e0a030 28px 42px,#b86a14 42px 56px,#5a2a0a 56px)}
+.ph:before{content:"";position:absolute;left:18px;top:10px;width:40px;height:40px;
+ clip-path:polygon(12px 0,28px 0,28px 4px,36px 4px,36px 12px,40px 12px,40px 28px,36px 28px,36px 36px,28px 36px,28px 40px,12px 40px,12px 36px,4px 36px,4px 28px,0 28px,0 12px,4px 12px,4px 4px,12px 4px);
+ background:radial-gradient(circle at 40% 38%,#fff3c0 0 6px,#f6c444 6px 12px,#8a3a0c 12px 16px,#2a1304 16px 20px,#e8a032 20px)}
+.ph h2{margin:0;font:700 32px/1 Silkscreen;color:var(--ink);text-shadow:4px 4px 0 rgba(255,245,210,.55);text-transform:lowercase}
+.pb{padding:22px 30px 0 34px}
+.pb ul{list-style:none;margin:0;padding:0;font:400 26px/1.55 Silkscreen;color:var(--text);text-transform:lowercase}
+.pb li:before{content:"» ";color:var(--gold)}
+.pb li b{color:var(--pale);font-weight:700}
+.url{position:absolute;padding:12px 34px 10px 30px;clip-path:var(--para);font:700 46px/1 Silkscreen;color:var(--ink);letter-spacing:2px;
+ background:linear-gradient(180deg,#fff3c0 0 4px,#ffd860 4px 50%,#e0a030 50% calc(100% - 6px),#8a3a0c calc(100% - 6px))}
+.tag{position:absolute;padding:8px 14px 6px;font:700 26px/1 Silkscreen;color:var(--ink);clip-path:var(--notch);transform:rotate(-6deg);
+ background:linear-gradient(180deg,#fff3c0 0 4px,#ffd860 4px 50%,#e0a030 50%);box-shadow:inset 0 -4px 0 #8a3a0c}
+.foot{position:absolute;font:400 18px/1 Silkscreen;color:var(--pale);opacity:.85;text-transform:lowercase}
+</style></head><body>
+<canvas id="bg"></canvas><div class="scan"></div>
+<canvas id="sheet"></canvas>
+<div class="menu" id="menu"><b>START GAME</b>online play...<br>settings...<br>how to race...<br>read me...<div class="dots"></div><small>no install · no cd</small></div>
+<canvas id="logo" width="240" height="60"></canvas>
+<div class="tag" id="tag">early build</div>
+<div class="panel" id="panel"><div class="ph"><h2>play in your browser</h2></div><div class="pb"><ul>
+<li>the <b>1997</b> classic, recompiled</li><li>the original handling &amp; ai</li><li><b>online races</b> with friends</li><li>webassembly · webgl 2</li></ul></div></div>
+<div class="url" id="url">NFS2SE.XYZ</div>
+<div class="foot" id="foot">unofficial fan project · github.com/mrz944/nfs2se-web</div>
+<script>
+const qs = new URLSearchParams(location.search), W = +qs.get('w') || 1200, H = +qs.get('h') || 630;
+document.body.style.width = W + 'px'; document.body.style.height = H + 'px';
+const $ = (id) => document.getElementById(id), place = (el, x, y, w, h) => { const s = el.style; s.left = x + 'px'; s.top = y + 'px'; if (w) s.width = w + 'px'; if (h) s.height = h + 'px'; };
+// the same drawing as web/index.html: Bayer-dithered, few levels per channel, hard pixels, seeded made-up lands
+const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map((v) => (v + .5) / 16);
+const q = (v, lv, k) => Math.max(0, Math.min(255, Math.round(Math.floor(v / 255 * (lv - 1) + k) * 255 / (lv - 1))));
+const P = new Uint8Array(512);
+{ let s = 1997; const p = [...Array(256).keys()];
+  for (let i = 255; i > 0; i--) { s = (s * 1103515245 + 12345) & 0x7fffffff; const j = s % (i + 1); [p[i], p[j]] = [p[j], p[i]]; }
+  for (let i = 0; i < 512; i++) P[i] = p[i & 255]; }
+const fade = (t) => t * t * (3 - 2 * t), lerp = (a, b, t) => a + (b - a) * t, h3 = (x, y, z) => P[P[P[x & 255] + (y & 255)] + (z & 255)] / 255;
+function noise(x, y, z) {
+  const X = Math.floor(x), Y = Math.floor(y), Z = Math.floor(z), u = fade(x - X), v = fade(y - Y), w = fade(z - Z);
+  return lerp(lerp(lerp(h3(X, Y, Z), h3(X + 1, Y, Z), u), lerp(h3(X, Y + 1, Z), h3(X + 1, Y + 1, Z), u), v),
+              lerp(lerp(h3(X, Y, Z + 1), h3(X + 1, Y, Z + 1), u), lerp(h3(X, Y + 1, Z + 1), h3(X + 1, Y + 1, Z + 1), u), v), w);
+}
+const fbm = (x, y, z) => noise(x, y, z) * .55 + noise(x * 2.1, y * 2.1, z * 2.1) * .28 + noise(x * 4.3, y * 4.3, z * 4.3) * .17;
+const MW = 256, MH = 128, map = new Float32Array(MW * MH * 3);
+{ const LANDS = [[158, 34, 16], [62, 108, 32], [184, 146, 42], [44, 60, 112], [126, 68, 22]], SEA = [92, 44, 12];
+  for (let j = 0; j < MH; j++) for (let i = 0; i < MW; i++) {
+    const lon = i / MW * Math.PI * 2, lat = (j / (MH - 1) - .5) * Math.PI;
+    const px = Math.cos(lat) * Math.cos(lon) * 1.7, py = Math.sin(lat) * 1.7, pz = Math.cos(lat) * Math.sin(lon) * 1.7, land = fbm(px + 3, py + 3, pz + 3);
+    let c;
+    if (land > .52) { const k = fbm(px * .6 + 11, py * .6 + 11, pz * .6 + 11), a = LANDS[k < .44 ? 0 : k < .53 ? 1 : k < .62 ? 2 : k < .67 ? 3 : 4], e = Math.min(1, (land - .52) * 9); c = SEA.map((s, n) => s + (a[n] - s) * e); }
+    else c = SEA.map((s) => s * (.75 + land * .5));
+    map.set(c, (j * MW + i) * 3);
+  } }
+function canvasAt(el, x, y, w, h, px) { el.width = Math.round(w / px); el.height = Math.round(h / px); place(el, x, y, el.width * px, el.height * px); return el.getContext('2d'); }
+
+// ---- backdrop: the globe on the right, drafting rings, the gold bars along its edge (3 px blocks)
+{ const PX = 3, bx = canvasAt($('bg'), 0, 0, W, H, PX), bw = $('bg').width, bh = $('bg').height, img = bx.createImageData(bw, bh), d = img.data;
+  const cx = bw * .79, cy = bh * .5, R = bh * .5, bar = .085;
+  for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) {
+    const o = (y * bw + x) * 4, dx = (x - cx) / R, dy = (y - cy) / R, r2 = dx * dx + dy * dy, r = Math.sqrt(r2), k = BAYER[(y & 3) * 4 + (x & 3)];
+    let c0, c1, c2;
+    if (r2 < 1) {
+      const z = Math.sqrt(1 - r2), lon = Math.atan2(dx, z) + .6, lat = Math.asin(dy);
+      const i = ((Math.floor(lon / (Math.PI * 2) * MW) % MW) + MW) % MW, j = Math.min(MH - 1, Math.floor((lat / Math.PI + .5) * (MH - 1))), m = (j * MW + i) * 3;
+      const lit = Math.max(.16, (-dx * .45 - dy * .55 + z * .7) * .9 + .25) * (1 - Math.max(0, (r - .9) * 6) * .35);
+      c0 = map[m] * lit; c1 = map[m + 1] * lit; c2 = map[m + 2] * lit;
+    } else {
+      const glow = Math.max(0, 1 - (r - 1) * 2.4) * .35;
+      c0 = 18 + 70 * glow; c1 = 8 + 30 * glow; c2 = 2 + 6 * glow;
+      for (const s of [1.08, 1.22, 1.5]) if (Math.abs(r - s) * R < .7) { const a = s === 1.08 ? .45 : .22; c0 += (246 - c0) * a; c1 += (196 - c1) * a; c2 += (68 - c2) * a; }
+      const a = Math.atan2(dy, dx), da = (a < 0 ? a + Math.PI * 2 : a) - Math.PI, n = Math.round(da / bar);
+      if (Math.abs(n) <= 12 && Math.abs(da - n * bar) < .022) {
+        const len = (.34 - Math.abs(n) * .022) * (n % 3 ? .8 : 1);
+        if (len > 0 && r > 1.1 && r < 1.1 + len) { const f = 1 - (r - 1.1) / len; c0 = lerp(c0, 255, f * .9); c1 = lerp(c1, 214, f * .9); c2 = lerp(c2, 110, f * .9); }
+      }
+    }
+    d[o] = q(c0, 13, k); d[o + 1] = q(c1, 13, k); d[o + 2] = q(c2, 9, k); d[o + 3] = 255;
+  }
+  bx.putImageData(img, 0, 0); }
+
+// ---- layout: margins scale with the card; GitHub crops nothing, but keep 40 px clear all round
+const M = Math.round(W * .04), y0 = Math.round(H * .33), sheetW = 360, sheetH = H - y0 - M;
+// ---- the drafting sheet behind the menu (2 px blocks), its ladder of gold bars on the right
+{ const PX = 2, sx = canvasAt($('sheet'), M, y0, sheetW, sheetH, PX), w = $('sheet').width, h = $('sheet').height, im = sx.createImageData(w, h), d = im.data;
+  const lad = 13, rx = w * .18, ry = h * .78, cx2 = w - 30, cy2 = 10;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const o = (y * w + x) * 4, k = BAYER[(y & 3) * 4 + (x & 3)];
+    let c0, c1, c2;
+    if (x >= w - lad) {
+      const p = (y + (x - (w - lad)) * .25) % 6, lit = p < 1 ? [255, 228, 140] : p < 3 ? [233, 165, 46] : p < 3.6 ? [138, 74, 12] : [42, 18, 4];
+      const f = x >= w - lad + 9 ? .7 : 1; [c0, c1, c2] = lit.map((v) => v * f);
+    } else {
+      const t = (x * .35 + y) / (h + w * .35); c0 = lerp(250, 190, t); c1 = lerp(200, 104, t); c2 = lerp(98, 26, t);
+      const hl = Math.max(0, 1 - Math.hypot(x / w - .3, y / h - .15) * 2.2); c0 += 12 * hl; c1 += 30 * hl; c2 += 50 * hl;
+      let ink = 0;
+      if (x % 16 === 0 || y % 16 === 0) ink = .13;
+      if (Math.hypot(x - rx, y - ry) % 29 < 1) ink = .2;
+      const r2 = Math.hypot(x - cx2, y - cy2); if (r2 < 60 && r2 % 11 < 1) ink = .16;
+      c0 = lerp(c0, 90, ink); c1 = lerp(c1, 40, ink); c2 = lerp(c2, 4, ink);
+    }
+    d[o] = q(c0, 12, k); d[o + 1] = q(c1, 12, k); d[o + 2] = q(c2, 8, k); d[o + 3] = 255;
+  }
+  sx.putImageData(im, 0, 0); }
+place($('menu'), M + 20, y0 + 22, sheetW - 66);
+const px0 = M + sheetW + 34, pw = Math.min(W - px0 - M, 640);
+place($('panel'), px0, y0, pw, 252);
+place($('url'), px0, y0 + 252 + 28);
+place($('foot'), px0 + 4, H - M - 16);
+place($('tag'), M + 690, M + 30);
+
+// ---- wordmark, as on the page: gold II, NEED FOR SPEED in chrome, SPECIAL EDITION in gold (3 px blocks)
+document.fonts.ready.then(() => Promise.all(['700 21px Oswald', '400 11px Oswald', '18px Silkscreen'].map((f) => document.fonts.load(f)))).then(() => {
+  const lg = $('logo'), lx = lg.getContext('2d', { willReadFrequently: true }), LW = lg.width, LH = lg.height;
+  place(lg, M - 10, M - 22, LW * 3, LH * 3);
+  const grad = (y0, y1, stops) => { const gr = lx.createLinearGradient(0, y0, 0, y1); stops.forEach(([o, c]) => gr.addColorStop(o, c)); return gr; };
+  const chrome = (y0, y1) => grad(y0, y1, [[0, '#ffffff'], [.45, '#d8d2c4'], [.5, '#5a4a38'], [.62, '#b8ab94'], [1, '#fff6e0']]);
+  const gold = (y0, y1) => grad(y0, y1, [[0, '#fff3c0'], [.45, '#f6c444'], [.55, '#a8580e'], [1, '#f2b63a']]);
+  function word(text, x, y, font, fill, stroke = 3) {
+    lx.save(); lx.translate(x, y); lx.transform(1, 0, -.2, 1, 0, 0); lx.font = font; lx.lineJoin = 'round';
+    if (stroke) { lx.lineWidth = stroke; lx.strokeStyle = '#1c0b02'; lx.strokeText(text, 0, 0); }
+    lx.fillStyle = fill; lx.fillText(text, 0, 0); lx.restore();
+  }
+  word('II', 6, 50, '700 50px Oswald', gold(10, 50), 4);
+  word('NEED FOR SPEED', 46, 28, '700 21px Oswald', chrome(8, 28));
+  word('SPECIAL EDITION', 47, 43, '400 11px Oswald', '#f6c444', 0);
+  const id = lx.getImageData(0, 0, LW, LH), d = id.data;
+  for (let y = 0; y < LH; y++) for (let x = 0; x < LW; x++) {
+    const o = (y * LW + x) * 4, k = BAYER[(y & 3) * 4 + (x & 3)];
+    if (d[o + 3] < 110) { d[o + 3] = 0; continue; }
+    const a = d[o + 3] / 255;
+    for (let c = 0; c < 3; c++) { const v = d[o + c] / 255 * a; d[o + c] = Math.min(7, Math.floor(v * 7 + k)) * 255 / 7; }
+    d[o + 3] = 255;
+  }
+  lx.putImageData(id, 0, 0);
+  document.title = 'ready';
+});
+</script></body></html>
