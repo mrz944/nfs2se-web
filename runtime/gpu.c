@@ -88,7 +88,10 @@ static void frame_append(GFrame *d, GFrame *s) {
         if (c.type == GC_DRAW) { c.state += so; c.first += vo; } else if (c.type == GC_LFB) c.lfb += lo;
         d->cmds[d->ncmds++] = c;
     }
-    memcpy(d->fog_lut, s->fog_lut, sizeof d->fog_lut);
+    uint32_t fo = d->nfog;                    /* fog tables move along, the states follow them */
+    for (uint32_t i = 0; i < s->nfog && d->nfog < GPU_FOG_TABLES; i++) memcpy(d->fog_luts[d->nfog++], s->fog_luts[i], 256);
+    for (uint32_t i = so; i < d->nstates; i++) { uint32_t t = d->states[i].fog_tab + fo; d->states[i].fog_tab = (uint8_t)(t < GPU_FOG_TABLES ? t : GPU_FOG_TABLES - 1); }
+    d->gamma = s->gamma;
 }
 
 void gpu_publish(GFrame *f) {
@@ -215,7 +218,7 @@ static GLuint gltex[GPU_MAX_TEX]; static uint32_t gltex_ver[GPU_MAX_TEX];
 static uint32_t gltex_par[GPU_MAX_TEX];  /* filter/wrap last set on each texture (+1), to skip repeats */
 static int max_scale = 4;               /* upper limit for the integer render scale (rt_gpu_set_max_scale) */
 static GFrame *shown;
-static GLint u_res, u_has_tex, u_cc, u_ac, u_tc, u_inv, u_const, u_fogc, u_chroma, u_atest, u_aref, u_fog_on, u_chroma_on;
+static GLint u_fog_row, ub_gamma, u_res, u_has_tex, u_cc, u_ac, u_tc, u_inv, u_const, u_fogc, u_chroma, u_atest, u_aref, u_fog_on, u_chroma_on;
 static GLint ub_swz, ub_rect, ub_key;
 GLuint gpu_target_fbo;                  /* where the finished picture goes (0 = window) */
 
@@ -236,7 +239,7 @@ static const char *FS =
     "in vec4 v_colw; in float v_w; in vec2 v_st;\n"
     "uniform sampler2D u_tex; uniform sampler2D u_fog;\n"
     "uniform bool u_has_tex; uniform ivec4 u_cc, u_ac, u_tc, u_inv;\n"
-    "uniform vec4 u_const, u_fogc, u_chroma; uniform int u_atest; uniform float u_aref; uniform bool u_fog_on, u_chroma_on;\n"
+    "uniform vec4 u_const, u_fogc, u_chroma; uniform int u_atest; uniform float u_aref, u_fog_row; uniform bool u_fog_on, u_chroma_on;\n"
     "out vec4 o;\n"
     "vec3 fac3(int f, vec3 l, float la, float oa, vec4 t) {\n"
     "  if (f == 0) return vec3(0.0); if (f == 1) return l; if (f == 2) return vec3(oa); if (f == 3) return vec3(la);\n"
@@ -283,7 +286,7 @@ static const char *FS =
     "  if (!pass) discard;\n"
     "  if (u_fog_on) {\n"
     "    float w = 1.0 / gl_FragCoord.w;\n"
-    "    float f = texture(u_fog, vec2((log2(max(w, 1.0)) * 16.0 + 0.5) / 256.0, 0.5)).r;\n"
+    "    float f = texture(u_fog, vec2((log2(max(w, 1.0)) * 16.0 + 0.5) / 256.0, u_fog_row)).r;\n"
     "    rgb = mix(rgb, u_fogc.rgb, f);\n"
     "  }\n"
     "  o = vec4(rgb, a);\n"
@@ -295,8 +298,9 @@ static const char *VSB =
     "void main() { v_uv = a_p; gl_Position = vec4(u_rect.xy + a_p * u_rect.zw, 0.0, 1.0); }\n";
 static const char *FSB =
     "#version 300 es\n"
-    "precision mediump float; in vec2 v_uv; uniform sampler2D u_t; uniform bool u_swz; uniform bool u_key; out vec4 o;\n"
-    "void main() { vec4 c = texture(u_t, v_uv); if (u_key && c.a < 0.5) discard; o = vec4(u_swz ? c.bgr : c.rgb, 1.0); }\n";
+    "precision mediump float; in vec2 v_uv; uniform sampler2D u_t; uniform bool u_swz; uniform bool u_key; uniform float u_gamma; out vec4 o;\n"
+    "void main() { vec4 c = texture(u_t, v_uv); if (u_key && c.a < 0.5) discard; vec3 rgb = u_swz ? c.bgr : c.rgb;\n"
+    "  o = vec4(u_gamma != 1.0 ? pow(rgb, vec3(1.0 / u_gamma)) : rgb, 1.0); }\n";
 
 static GLuint compile(GLenum type, const char *src) {
     GLuint s = glCreateShader(type); glShaderSource(s, 1, &src, NULL); glCompileShader(s);
@@ -320,11 +324,11 @@ static void gl_init(void) {
     u_cc = glGetUniformLocation(prog, "u_cc"); u_ac = glGetUniformLocation(prog, "u_ac"); u_tc = glGetUniformLocation(prog, "u_tc");
     u_inv = glGetUniformLocation(prog, "u_inv"); u_const = glGetUniformLocation(prog, "u_const"); u_fogc = glGetUniformLocation(prog, "u_fogc");
     u_chroma = glGetUniformLocation(prog, "u_chroma"); u_atest = glGetUniformLocation(prog, "u_atest"); u_aref = glGetUniformLocation(prog, "u_aref");
-    u_fog_on = glGetUniformLocation(prog, "u_fog_on"); u_chroma_on = glGetUniformLocation(prog, "u_chroma_on");
+    u_fog_on = glGetUniformLocation(prog, "u_fog_on"); u_fog_row = glGetUniformLocation(prog, "u_fog_row"); u_chroma_on = glGetUniformLocation(prog, "u_chroma_on");
     glUseProgram(prog);
     glUniform1i(glGetUniformLocation(prog, "u_tex"), 0); glUniform1i(glGetUniformLocation(prog, "u_fog"), 1);
     prog_blit = link(VSB, FSB);
-    ub_swz = glGetUniformLocation(prog_blit, "u_swz"); ub_rect = glGetUniformLocation(prog_blit, "u_rect"); ub_key = glGetUniformLocation(prog_blit, "u_key");
+    ub_swz = glGetUniformLocation(prog_blit, "u_swz"); ub_rect = glGetUniformLocation(prog_blit, "u_rect"); ub_key = glGetUniformLocation(prog_blit, "u_key"); ub_gamma = glGetUniformLocation(prog_blit, "u_gamma");
     glUseProgram(prog_blit); glUniform1i(glGetUniformLocation(prog_blit, "u_t"), 0);
 
     glGenVertexArrays(1, &vao); glBindVertexArray(vao);
@@ -425,7 +429,7 @@ static void apply_state(const GState *s, const GFrame *f) {
     glUniform4i(u_inv, s->cc_invert, s->ac_invert, s->tc_rgb_invert, s->tc_a_invert);
     color4(u_const, s->constant_color); color4(u_fogc, s->fog_color); color4(u_chroma, s->chroma_color);
     glUniform1i(u_atest, s->alpha_test); glUniform1f(u_aref, (float)s->alpha_ref);
-    glUniform1i(u_fog_on, (s->fog_mode & 0xFF) != 0); glUniform1i(u_chroma_on, s->chroma_mode != 0);
+    glUniform1i(u_fog_on, (s->fog_mode & 0xFF) != 0); glUniform1f(u_fog_row, (s->fog_tab + .5f) / GPU_FOG_TABLES); glUniform1i(u_chroma_on, s->chroma_mode != 0);
     if (s->blend_src == 4 && s->blend_dst == 0) glDisable(GL_BLEND);
     else { glEnable(GL_BLEND); glBlendFuncSeparate(blend_gl(s->blend_src, 1), blend_gl(s->blend_dst, 0), blend_gl(s->blend_asrc, 1), blend_gl(s->blend_adst, 0)); }
     if (s->depth_mode) { glEnable(GL_DEPTH_TEST); glDepthFunc(cmp_gl[s->depth_func & 7]); glDepthMask(s->depth_mask ? GL_TRUE : GL_FALSE); }
@@ -437,7 +441,7 @@ static void draw_quad_tex(GLuint t, float x0, float y0, float x1, float y1, int 
     /* rect in NDC, texture row 0 at the top */
     glUseProgram(prog_blit);
     glUniform4f(ub_rect, x0, y0, x1 - x0, y1 - y0);
-    glUniform1i(ub_swz, swz); glUniform1i(ub_key, key);
+    glUniform1i(ub_swz, swz); glUniform1i(ub_key, key); glUniform1f(ub_gamma, 1.0f);
     glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D, t);
     glBindVertexArray(quad_vao);
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
@@ -454,11 +458,11 @@ static void render_frame(GFrame *f) {
     glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(f->nverts * sizeof(GVert)), f->verts, GL_STREAM_DRAW);
     glUseProgram(prog);
     glUniform2f(u_res, (float)f->w, (float)f->h);
-    static uint8_t fog_last[256]; static int fog_set;
+    static uint8_t fog_last[GPU_FOG_TABLES][256]; static int fog_set;
     glActiveTexture(GL_TEXTURE1); glBindTexture(GL_TEXTURE_2D, fog_tex);
-    if (!fog_set || memcmp(fog_last, f->fog_lut, sizeof fog_last)) {
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, 256, 1, 0, GL_RED, GL_UNSIGNED_BYTE, f->fog_lut);
-        memcpy(fog_last, f->fog_lut, sizeof fog_last); fog_set = 1;
+    if (f->nfog && (!fog_set || memcmp(fog_last, f->fog_luts, f->nfog * 256))) {   /* one row per table */
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, 256, GPU_FOG_TABLES, 0, GL_RED, GL_UNSIGNED_BYTE, f->fog_luts);
+        memcpy(fog_last, f->fog_luts, sizeof fog_last); fog_set = 1;
     }
     glActiveTexture(GL_TEXTURE0);
     uint32_t applied = UINT32_MAX;
@@ -573,6 +577,8 @@ int gpu_render(int out_w, int out_h) {
         /* the FBO is bottom-up: draw it flipped back */
         glUseProgram(prog_blit);
         glUniform4f(ub_rect, -1, -1, 2, 2); glUniform1i(ub_swz, 0); glUniform1i(ub_key, 0);
+        /* the Voodoo's gamma table sat between the frame buffer and the screen: on the way out */
+        glUniform1f(ub_gamma, shown->gamma > .2f && shown->gamma < 5.f ? shown->gamma : 1.0f);
         glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D, fbo_color);
         glBindVertexArray(quad_vao); glDrawArrays(GL_TRIANGLE_STRIP, 0, 4); glBindVertexArray(vao);
     }

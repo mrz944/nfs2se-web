@@ -35,6 +35,21 @@ static int origin_lower;                    /* GR_ORIGIN_LOWER_LEFT */
 static int cull_mode;
 static uint8_t fog_table[64];
 static uint8_t fog_lut[256];
+static int fog_log(void) { static int on = -1; if (on < 0) on = getenv("RT_FOG_LOG") != NULL; return on; }   /* RT_FOG_LOG: fog and gamma calls */
+/* NFS II SE loads two fog tables every frame and draws with each: a frame keeps every table it
+ * drew with (GFrame.fog_luts) and each draw state names its own (GState.fog_tab). */
+static uint32_t fog_ver = 1, fog_frame_ver;
+static GFrame *fog_frame;
+static uint8_t fog_index(GFrame *f) {
+    if (fog_frame != f || fog_frame_ver != fog_ver || !f->nfog) {
+        if (f->nfog < GPU_FOG_TABLES) f->nfog++;
+        memcpy(f->fog_luts[f->nfog - 1], fog_lut, sizeof fog_lut);
+        fog_frame = f; fog_frame_ver = fog_ver;
+    }
+    return (uint8_t)(f->nfog - 1);
+}
+/* grGammaCorrectionValue: the game asks for 1.5 at start (its brightness), applied when shown */
+static float gamma_value = 1.0f;
 
 /* vertex layout (byte offsets, -1 = absent) */
 enum { P_XY, P_Z, P_W, P_Q, P_A, P_RGB, P_PARGB, P_ST0, P_Q0, P_N };
@@ -74,6 +89,7 @@ static void emit_tri(const GVert v[3]) {
     if (cur_state == UINT32_MAX || cur->ncmds == 0 || cur->cmds[cur->ncmds - 1].type != GC_DRAW ||
         cur->cmds[cur->ncmds - 1].state != cur_state) {
         if (cur_state == UINT32_MAX) {
+            st.fog_tab = st.fog_mode ? fog_index(cur) : 0;
             if (!cur->nstates || memcmp(&cur->states[cur->nstates - 1], &st, sizeof st)) {
                 GROW(cur->states, cur->nstates, cur->capstates, GState);
                 cur->states[cur->nstates++] = st;
@@ -469,7 +485,7 @@ static GFrame *back_saved; static int front_mode;
 static void front_begin(void) { if (!front_mode) { back_saved = cur; cur = NULL; state_changed(); front_mode = 1; } }
 static void front_flush(void) {
     if (!front_mode || !cur || !cur->ncmds) return;
-    memcpy(cur->fog_lut, fog_lut, sizeof fog_lut);
+    cur->gamma = gamma_value;
     GFrame *f = cur; cur = NULL; state_changed();
     gpu_publish(f);
 }
@@ -549,7 +565,7 @@ GL_(BufferClear) {
 GL_(BufferSwap) {
     (void)c; (void)a;
     frame_begin();
-    memcpy(cur->fog_lut, fog_lut, sizeof fog_lut);
+    cur->gamma = gamma_value;
     GFrame *f = cur; cur = NULL;
     gpu_publish(f);
     swaps++; tex_sweep();
@@ -579,13 +595,14 @@ GL_(DepthBufferMode) { (void)c; st.depth_mode = (uint8_t)A(0); state_changed(); 
 GL_(DepthBufferFunction) { (void)c; st.depth_func = (uint8_t)A(0); state_changed(); return 0; }
 GL_(DepthMask) { (void)c; st.depth_mask = (uint8_t)(A(0) != 0); state_changed(); return 0; }
 GL_(DepthBiasLevel) { (void)c; st.depth_bias = (int16_t)A(0); return 0; }
-GL_(FogMode) { (void)c; st.fog_mode = (uint8_t)(A(0) & 0xFF); state_changed(); return 0; }
-GL_(FogColorValue) { (void)c; st.fog_color = argb_from(A(0)); state_changed(); return 0; }
+GL_(FogMode) { (void)c; if (fog_log() && st.fog_mode != (uint8_t)A(0)) rt_log("FOGLOG mode %#x", A(0)); st.fog_mode = (uint8_t)(A(0) & 0xFF); state_changed(); return 0; }
+GL_(FogColorValue) { (void)c; if (fog_log()) rt_log("FOGLOG color %#x", A(0)); st.fog_color = argb_from(A(0)); state_changed(); return 0; }
 /* fog_lut[i]: density at w = 2^(i/16), interpolated from the 64-entry table
  * indexed like guFogTableIndexToW: w(i) = 2^(3 + i/4) / (8 - i%4) */
 GL_(FogTable) {
     (void)c;
     memcpy(fog_table, G + A(0), 64);
+    if (fog_log()) { char b[400]; int n = 0; for (int i = 0; i < 64; i++) n += snprintf(b + n, sizeof b - (size_t)n, "%u ", fog_table[i]); rt_log("FOGLOG table %s", b); }
     double tw[64];
     for (int i = 0; i < 64; i++) tw[i] = pow(2.0, 3.0 + (double)(i >> 2)) / (8 - (i & 3));
     for (int j = 0; j < 256; j++) {
@@ -597,6 +614,7 @@ GL_(FogTable) {
         else { double t = (w - tw[i]) / (tw[i + 1] - tw[i]); f = fog_table[i] + (fog_table[i + 1] - fog_table[i]) * t; }
         fog_lut[j] = (uint8_t)(f + 0.5);
     }
+    fog_ver++; state_changed();
     return 0;
 }
 GL_(ChromakeyMode) { (void)c; if (getenv("RT_TEX_LOG") && st.chroma_mode != (uint8_t)A(0)) rt_log("grChromakeyMode(%u)", A(0)); st.chroma_mode = (uint8_t)A(0); state_changed(); return 0; }
@@ -788,7 +806,12 @@ GL_(G2SstQueryHardware) {
 GL_(G2SstIdle) { UNUSED; front_flush(); return 0; }
 GL_(G2SstIsBusy) { UNUSED; return 0; }
 GL_(G2SstStatus) { UNUSED; return 0x0FFFF03Fu; }   /* idle, no swaps pending, not in retrace */
-GL_(G2GammaCorrectionValue) { UNUSED; return 0; }
+GL_(G2GammaCorrectionValue) {
+    (void)c; float g = F(A(0));
+    if (fog_log()) rt_log("FOGLOG gamma %f", g);
+    if (g > .2f && g < 5.f) gamma_value = g;
+    return 0;
+}
 GL_(G2TexMaxAddress) { UNUSED; return G2_TMEM - 8; }
 GL_(G2TexCalcMemRequired) {
     (void)c;
@@ -829,6 +852,7 @@ GL_(G2FogGenerateExp) {
     /* guFogGenerateExp(GrFog_t table[64], float density), as in the Glide 2 SDK */
     (void)c;
     float density = F(A(1));
+    if (fog_log()) rt_log("FOGLOG exp density %g", density);
     double wmax = pow(2.0, 3.0 + 15) / (8 - 3), dp = density * wmax;
     double scale = 255.0 / (1.0 - exp(-dp));
     for (int i = 0; i < 64; i++) {

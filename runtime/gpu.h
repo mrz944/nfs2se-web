@@ -31,6 +31,7 @@ typedef struct {
     uint8_t depth_mode, depth_func, depth_mask;
     uint8_t fog_mode, chroma_mode;
     uint8_t color_mask;
+    uint8_t fog_tab;                     /* which of the frame's fog tables */
     int16_t depth_bias;
     uint32_t constant_color;             /* ARGB */
     uint32_t fog_color;                  /* ARGB */
@@ -38,6 +39,7 @@ typedef struct {
     int16_t clip[4];                     /* minx, miny, maxx, maxy */
 } GState;
 
+#define GPU_FOG_TABLES 8
 enum { GC_DRAW = 1, GC_CLEAR = 2, GC_LFB = 3 };
 typedef struct {
     uint8_t type;
@@ -60,7 +62,9 @@ typedef struct GFrame {
     GVert *verts; uint32_t nverts, capverts;
     GState *states; uint32_t nstates, capstates;
     GLfb *lfbs; uint32_t nlfbs, caplfbs;
-    uint8_t fog_lut[256];                /* fog density by log2(w)*16, from grFogTable */
+    uint8_t fog_luts[GPU_FOG_TABLES][256]; /* fog density by log2(w)*16, from grFogTable: every table the frame drew with */
+    uint32_t nfog;
+    float gamma;                         /* grGammaCorrectionValue: the Voodoo's output gamma, 0 = none */
     uint32_t seq;
 } GFrame;
 

@@ -59,6 +59,8 @@ be reproduced before it ran correctly:
   same textures. A Voodoo looks colours up as it draws; the runtime now keeps a copy of a texture
   per palette and switches when a palette is loaded after the texture was picked, so cars no longer
   flash another car's colours;
+- **brightness and fog:** the game sets the Voodoo's output gamma to 1.5 and draws every frame
+  with two fog tables; both are now honoured, so night tracks are no longer too dark and murky;
 - **free disk space** that fits the game's 32-bit arithmetic (a 4 GB answer wrapped to "less than 1 MB");
 - **the CD and DirectX checks:** drive types, the volume label, and `DSETUP.DLL`'s version query;
 - **an empty mouse poll yields:** the front end spins on the mouse while a loader thread works; the
@@ -156,6 +158,7 @@ much easier to chase than in a browser.
 | `RT_VERBOSE=1..3` · `RT_TRACE=addr,…` | runtime log (2: every import call) · trace lifted functions |
 | `RT_WATCH_AT=s` | dump every thread and the single-core lock at that time |
 | `RT_PROF=file` | sampling profiler (`tools/prof.py`) |
+| `RT_FOG_LOG=1` · `RT_TEX_LOG=1..3` | log fog and gamma calls · texture conversions |
 | `RT_VSYNC=0` | don't pace `grBufferSwap` to 60 Hz |
 | `RT_MULTICORE=1` | run game threads truly in parallel (the movie player may then fail) |
 | `./re NFS2SEA.EXE dis\|func\|xref\|str …` | disassembler and cross-references for the exe |
