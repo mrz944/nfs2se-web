@@ -49,7 +49,33 @@ static void unlock_all(void) {
     done = 1;
 }
 
+/* Instant steering (RT_INSTANT_STEER=1, the start page's setting): the wheels reach full lock at
+ * once instead of ramping. Each physics tick (0x468b10) the game moves a car's steering (+0x2e4)
+ * toward where the controls point (+0x2e0) by at most the car's step (its spec +0x130/+0x134),
+ * unless the player's race parameters say otherwise: with 0 at +0x10 of the block at
+ * 0x510040 + 0x40 * slot (the car's +0x21c points at it) it sets the steering at once (0x468fe2),
+ * as the AI's blocks do. The race setup (0x459890) writes 1 there for human players; nothing
+ * saves it. So for the local players' slots it is held at 0 during races. Found by watching the
+ * game's reads of the Left key through to the car (RT_RWATCH, a WWATCH=1 build). */
+#define RACE_PARAMS 0x510040u           /* 8 x 0x40 */
+#define SPLIT_SCREEN_PLAYERS 0x50ffd8u  /* 2 with two players on one screen */
+static int instant = -1;
+static void instant_steering(void) {
+    if (instant < 0) { instant = getenv("RT_INSTANT_STEER") && atoi(getenv("RT_INSTANT_STEER")); if (instant) rt_log("game: instant steering"); }
+    if (!instant) return;
+    extern int net_local_car(void);
+    int me = net_local_car();                                  /* -1 offline, -2 online but not known yet */
+    if (me == -2) return;
+    for (int k = 0; k < 8; k++) {
+        int local = me >= 0 ? k == me : k == 0 || (k == 1 && RD32(SPLIT_SCREEN_PLAYERS) == 2);
+        if (!local) continue;
+        uint32_t a = RACE_PARAMS + 0x40u * (uint32_t)k + 0x10u;
+        if (RD32(a)) WR32(a, 0);
+    }
+}
+
 void game_frame(void) {
     set_player_name();
     unlock_all();
+    instant_steering();
 }

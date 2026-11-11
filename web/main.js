@@ -273,9 +273,10 @@ async function writeBytes(dir, name, bytes) { await writeFile(dir, name, exact(b
 // --------------------------------------------------------------- settings
 // Game Settings on the start page, kept in this browser (localStorage nfs2se.settings) and used
 // when the game starts: fullscreen, the fps counter, the
-// render scale (gpu.c), unlocks (RT_LOCKED, game.c), controllers and volume. The 3dfx game always
+// render scale (gpu.c), unlocks (RT_LOCKED, game.c), instant steering (RT_INSTANT_STEER, game.c),
+// controllers and volume. The 3dfx game always
 // runs at 640x480; Sharpness draws its 3D at 1-4 times that.
-const SETTINGS_DEFAULT = { v: 2, fullscreen: false, fps: false, movies: false, unlock: true, pads: false, quality: 'auto', volume: 100 };
+const SETTINGS_DEFAULT = { v: 2, fullscreen: false, fps: false, movies: false, unlock: true, instant: false, pads: false, quality: 'auto', volume: 100 };
 const settings = { ...SETTINGS_DEFAULT };
 try { Object.assign(settings, JSON.parse(localStorage.getItem('nfs2se.settings') || '{}')); } catch {}
 // v2: Sharpness used to default to 1x (plain 640x480): saved settings from then move to Auto once
@@ -766,7 +767,7 @@ async function start() {
       if (code === 0) { log('game quit: back to the start page'); backToPage(); return; }
       log('ERROR game exited, code', code); track('error', { kind: 'exit', msg: 'code ' + code }); gameStopped('The game closed itself (see the log). Reload the page to start again.');
     },
-    arguments: ['/opfs/nfs2se', ...(settings.unlock ? [] : ['RT_LOCKED=1']),   // bonus cars and track (game.c)
+    arguments: ['/opfs/nfs2se', ...(settings.unlock ? [] : ['RT_LOCKED=1']), ...(settings.instant ? ['RT_INSTANT_STEER=1'] : []),   // game.c
       ...(cleanName($('pname')?.value).trim() ? [`RT_PLAYER_NAME=${cleanName($('pname').value).trim()}`] : [])],   // the game's name at CONNECT (game.c)
     // controllers before the game looks for them (it does once, right at start)
     preRun: [(m) => { try { writePads(m); } catch {} }],
