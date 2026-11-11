@@ -471,6 +471,13 @@ static __thread Thread *tls_thread;
 __thread volatile int *tls_kill;     /* checked by call_indirect (core.c) before each API call */
 
 /* the calling guest thread ends: its handle becomes signaled, like on Windows */
+/* A finished thread gives back its guest stack and TEB (Windows frees them too): the game
+ * starts threads again and again (movies, races), and each kept them otherwise, until the
+ * browser build's fixed memory ran out after a long session. */
+static void thread_release(void) {
+    rt_unwatch_thread();
+    if (tls_thread && tls_cpu) { CPU *c = tls_cpu; tls_cpu = NULL; cpu_free_thread(c); }
+}
 static _Noreturn void thread_end(uint32_t code) {
     Thread *t = tls_thread;
     if (t) {
@@ -479,6 +486,7 @@ static _Noreturn void thread_end(uint32_t code) {
         any_changed();
     }
     bgl_drop();
+    thread_release();
     pthread_exit(NULL);
 }
 void thread_killed(void) { thread_end(0); }
@@ -495,6 +503,7 @@ static void *thread_main(void *p) {
     ev("thread start", t->tid, t->param);
     uint32_t r = guest_call(c, t->start, 1, t->param);
     rt_log("thread %#x exited (%u)", t->tid, r);
+    thread_release();
     pthread_mutex_lock(&t->w.mu); t->w.signaled = 1; pthread_cond_broadcast(&t->w.cv); pthread_mutex_unlock(&t->w.mu);
     any_changed();
     return NULL;
@@ -509,6 +518,7 @@ static uint32_t k_CreateThread(CPU *c, const uint32_t *a) {
     uint32_t h = handle_new(H_THREAD, t);
     rt_log("CreateThread start=%#x param=%#x%s", t->start, t->param, t->suspended ? " (suspended)" : "");
     pthread_create(&t->th, NULL, thread_main, t);
+    pthread_detach(t->th);                  /* nothing joins it: detached, its host stack is freed on exit */
     return h;
 }
 static uint32_t k_ResumeThread(CPU *c, const uint32_t *a) {

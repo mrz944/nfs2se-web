@@ -66,6 +66,8 @@ be reproduced before it ran correctly:
   so cars driving into a shadow lost their textures in black speckles;
 - **brightness and fog:** the game sets the Voodoo's output gamma to 1.5 and draws every frame
   with two fog tables; both are now honoured, so night tracks are no longer too dark and murky;
+- **threads that end give their memory back:** the game starts threads again and again (movies,
+  races); each kept its stacks, which would run the browser build's fixed memory out in a long session;
 - **free disk space** that fits the game's 32-bit arithmetic (a 4 GB answer wrapped to "less than 1 MB");
 - **the CD and DirectX checks:** drive types, the volume label, and `DSETUP.DLL`'s version query;
 - **an empty mouse poll yields:** the front end spins on the mouse while a loader thread works; the
