@@ -145,6 +145,18 @@ void gpu_publish(GFrame *f) {
             if (o) { fwrite(G + 0x400000, 1, HEAP_LO - 0x400000 + heap_used(), o); fclose(o); rt_log("memdump %s at frame %u", fn, f->seq); }
         }
     }
+    {   /* RT_CARDUMP=file: every 0.25 s, the 8 car records (0x690 bytes each, 0 if absent) and 64 KB
+         * of the game's data at 0x500000, after a double timestamp (debugging, reverse engineering) */
+        static FILE *cd; static int on = -1; static double last;
+        if (on < 0) { const char *e = getenv("RT_CARDUMP"); on = e != NULL; if (e) cd = fopen(e, "wb"); }
+        static double every = -1; if (every < 0) every = getenv("RT_CARDUMP_MS") ? atof(getenv("RT_CARDUMP_MS")) / 1000 : 0.25;
+        if (cd && now_s() - last >= every) {
+            last = now_s(); double t = now_s(); fwrite(&t, 8, 1, cd);
+            static uint8_t zero[0x690];
+            for (int i = 0; i < 8; i++) { uint32_t car = RD32(0x50f918u + 4 * i); fwrite(car >= 0x400000 && car < GUEST_SIZE ? G + car : zero, 1, 0x690, cd); }
+            fwrite(G + 0x500000, 1, 0x20000, cd); fflush(cd);
+        }
+    }
     {   /* RT_CARLOG=1: every second, each car's position and speed (debugging the online sync) */
         static int cl = -1; static double last;
         if (cl < 0) cl = getenv("RT_CARLOG") ? atoi(getenv("RT_CARLOG")) : 0;   /* ms between lines */

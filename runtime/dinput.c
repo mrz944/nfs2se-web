@@ -179,6 +179,7 @@ static uint32_t d_GetProperty(CPU *c, const uint32_t *a) {
 static uint32_t d_GetDeviceState(CPU *c, const uint32_t *a) {
     Dev *d = dev_of(A(0)); uint32_t n = A(1), p = A(2);
     if (!d->acquired) return 0x8007000Cu;                /* DIERR_NOTACQUIRED */
+    { static int n_log; if (getenv("RT_DI_LOG") && n_log < 12) { n_log++; rt_log("GetDeviceState(kind %d, %u bytes -> %#x) from %#x", d->kind, n, p, rt_caller()); } }
     memset(G + p, 0, n);
     pthread_mutex_lock(&di_mu);
     if (d->kind == DEV_JOY) {                            /* DIJOYSTATE(2): 8 axes, 4 POVs, 32 (128) buttons */

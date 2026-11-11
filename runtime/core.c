@@ -79,6 +79,23 @@ void rt_watch_dump(const char *why) {
     }
     pthread_mutex_unlock(&watch_mu);
 }
+/* RT_WWATCH=hexaddr:len, in a build made with WWATCH=1 (build.sh): every write the game makes there
+ * is logged with the line of the lifted C, whose comment above names the x86 instruction (debugging) */
+uint32_t g_ww_lo = 0xFFFFFFFFu, g_ww_len;
+void rt_ww_hit(const char *file, int line, uint32_t a, uint32_t v, int n) {
+    static int left = -1; if (left < 0) left = 400;
+    if (left-- > 0) rt_log("WWATCH %s:%d [%#x] = %#x (%d)", file, line, a, v, n);
+}
+uint32_t g_rw_lo = 0xFFFFFFFFu, g_rw_len;
+void rt_rw_hit(const char *file, int line, uint32_t a, int n) {
+    static int left = -1; if (left < 0) left = 400;
+    if (left-- > 0) { rt_log("RWATCH %s:%d [%#x] (%d)", file, line, a, n); if (left > 360 && tls_cpu) guest_backtrace(tls_cpu); }
+}
+__attribute__((constructor)) static void ww_init(void) {
+    const char *e = getenv("RT_WWATCH");
+    if (e) { unsigned lo = 0, len = 4; sscanf(e, "%x:%u", &lo, &len); g_ww_lo = lo; g_ww_len = len; }
+    if ((e = getenv("RT_RWATCH"))) { unsigned lo = 0, len = 4; sscanf(e, "%x:%u", &lo, &len); g_rw_lo = lo; g_rw_len = len; }
+}
 __thread uint32_t tls_lasterr;
 char g_game_dir[1024];
 
