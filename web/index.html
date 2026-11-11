@@ -418,15 +418,10 @@
             <label class="opt"><input type="checkbox" data-set="fullscreen"><span><b>Start in fullscreen</b><i>Alt+Enter switches during the game.</i></span></label>
             <label class="opt"><input type="checkbox" data-set="fps"><span><b>FPS counter</b><i>Frames per second, bottom right.</i></span></label>
                                     <label class="opt"><input type="checkbox" data-set="pads"><span><b>Gamepads and wheels</b><i>Off keeps the keyboard as player 1 with a controller plugged in.</i></span></label>
-            <label class="opt sel"><b>Resolutions</b><select data-set="screen">
-              <option value="auto" id="set-screen-auto">Up to this screen</option>
-              <option value="1280x720">Up to 1280×720</option><option value="1600x900">Up to 1600×900</option>
-              <option value="1920x1080">Up to 1920×1080</option><option value="2560x1440">Up to 2560×1440</option><option value="3840x2160">Up to 3840×2160</option>
-            </select><i>What the game offers in Options › Graphics. Lower is faster on weak GPUs.</i></label>
             <label class="opt"><input type="checkbox" data-set="unlock"><span><b>Unlock bonus cars and track</b><i>Bomber BFS, Tombstone, FZR 2000 and Monolithic Studios, as if you'd won the Tournament.</i></span></label>
             <label class="opt sel"><b>Sharpness</b><select data-set="quality">
               <option value="auto">Auto</option><option value="1">Fast (1×)</option><option value="2">Balanced (2×)</option><option value="3">Sharp (3×)</option><option value="4">Sharpest (4×)</option>
-            </select><i>How many times the game picture is rendered over before it's scaled to the screen. Auto lowers it when the GPU falls behind.</i></label>
+            </select><i>The game runs at 640×480, like on the Voodoo; its 3D is drawn at this many times that. Auto starts at 3× and lowers it when the GPU falls behind.</i></label>
             <label class="opt sel"><b>Volume</b><span class="range"><input type="range" min="0" max="100" step="5" data-set="volume"><output id="set-volume-out">100%</output></span><i>On top of the game's own sound settings.</i></label>
           </div>
         </div>
