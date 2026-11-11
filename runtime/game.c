@@ -31,6 +31,25 @@ static void set_player_name(void) {
     done = 1;
 }
 
+/* Unlocks (on unless RT_LOCKED=1): the bonus track and cars the Tournament (or the main-menu
+ * codes "hollywood", "bomber", "tombstone", "fzr2000") would open. Two bytes of the settings block,
+ * found by snapshotting memory before and after each code: +0x1c Monolithic Studios (0/1) and
+ * +0x1d the bonus car level (1 Bomber BFS, 2 + Tombstone, 3 + FZR 2000). The game saves them with
+ * its settings, as it would after winning. */
+#define SETTINGS 0x510b70u
+static void unlock_all(void) {
+    static int done = -1;
+    if (done < 0) { const char *e = getenv("RT_LOCKED"); done = e && *e && *e != '0'; }
+    if (done || !name_valid(G + OWN_NAME)) return;
+    if (G[SETTINGS + 0x1c] != 1 || G[SETTINGS + 0x1d] < 3) {
+        G[SETTINGS + 0x1c] = 1;
+        if (G[SETTINGS + 0x1d] < 3) G[SETTINGS + 0x1d] = 3;
+        rt_log("unlocked: Monolithic Studios and the bonus cars");
+    }
+    done = 1;
+}
+
 void game_frame(void) {
     set_player_name();
+    unlock_all();
 }

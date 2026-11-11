@@ -177,6 +177,7 @@ much easier to chase than in a browser.
 - ✅ Online: lobby, virtual IPX LAN, two-player races natively and between two browsers, with NFS3's
   smoother play ported (each player's own car reacts like the host's; see [docs/online.md](docs/online.md))
 - ✅ Your lobby name is your name in the game (filled in at CONNECT)
+- ✅ Bonus cars (Bomber BFS, Tombstone, FZR 2000) and the Monolithic Studios track unlocked (Game Settings)
 - 🚧 Next: wider testing with more players and real internet links
 
 ## Credits
