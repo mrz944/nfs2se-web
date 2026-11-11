@@ -61,6 +61,9 @@ be reproduced before it ran correctly:
   flash another car's colours;
 - **frames locked to the screen:** on a 60, 120 or 240 Hz display the game's frames follow the
   display's refresh instead of a separate 60 Hz timer, so no frame is shown twice or skipped;
+- **cars in shadow:** the Voodoo's chroma key (black = see-through, used by the car textures) tests the
+  texture's colour before lighting; testing the lit colour cut dark car texels away in shaded spots,
+  so cars driving into a shadow lost their textures in black speckles;
 - **brightness and fog:** the game sets the Voodoo's output gamma to 1.5 and draws every frame
   with two fog tables; both are now honoured, so night tracks are no longer too dark and murky;
 - **free disk space** that fits the game's 32-bit arithmetic (a 4 GB answer wrapped to "less than 1 MB");

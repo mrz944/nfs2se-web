@@ -273,13 +273,16 @@ static const char *FS =
     /* local/other selections: 0 iterated, 1 constant (local) / texture (other), 2 depth (local) / constant (other) */
     "  vec3 cl = u_cc.z == 0 ? it.rgb : (u_cc.z == 1 ? u_const.rgb : vec3(gl_FragCoord.z));\n"
     "  vec3 co = u_cc.w == 0 ? it.rgb : (u_cc.w == 1 ? tx.rgb : u_const.rgb);\n"
+    /* chroma key: a Voodoo tests the colour combine's "other" input (the texel, for textured
+     * draws), before shading. Testing the shaded result also threw away dark texels that shading
+     * brought down to the key colour, black: cars in shadow lost their textures in speckles. */
+    "  if (u_chroma_on && all(lessThan(abs(co - u_chroma.rgb), vec3(2.5 / 255.0)))) discard;\n"
     "  float al = u_ac.z == 0 ? it.a : (u_ac.z == 1 ? u_const.a : gl_FragCoord.z);\n"
     "  float ao = u_ac.w == 0 ? it.a : (u_ac.w == 1 ? tx.a : u_const.a);\n"
     "  vec3 rgb = comb3(u_cc.x, fac3(u_cc.y, cl, al, ao, tx), cl, co, al);\n"
     "  float a = comb1(u_ac.x, fac1(u_ac.y, al, ao, tx), al, ao);\n"
     "  if (u_inv.x != 0) rgb = 1.0 - rgb; if (u_inv.y != 0) a = 1.0 - a;\n"
     "  rgb = clamp(rgb, 0.0, 1.0); a = clamp(a, 0.0, 1.0);\n"
-    "  if (u_chroma_on && all(lessThan(abs(rgb - u_chroma.rgb), vec3(2.5 / 255.0)))) discard;\n"
     "  float a8 = floor(a * 255.0 + 0.5);\n"
     "  bool pass = u_atest == 7 || (u_atest == 1 && a8 < u_aref) || (u_atest == 2 && a8 == u_aref) || (u_atest == 3 && a8 <= u_aref)\n"
     "           || (u_atest == 4 && a8 > u_aref) || (u_atest == 5 && a8 != u_aref) || (u_atest == 6 && a8 >= u_aref);\n"
