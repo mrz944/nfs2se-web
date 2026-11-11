@@ -59,6 +59,8 @@ be reproduced before it ran correctly:
   same textures. A Voodoo looks colours up as it draws; the runtime now keeps a copy of a texture
   per palette and switches when a palette is loaded after the texture was picked, so cars no longer
   flash another car's colours;
+- **frames locked to the screen:** on a 60, 120 or 240 Hz display the game's frames follow the
+  display's refresh instead of a separate 60 Hz timer, so no frame is shown twice or skipped;
 - **brightness and fog:** the game sets the Voodoo's output gamma to 1.5 and draws every frame
   with two fog tables; both are now honoured, so night tracks are no longer too dark and murky;
 - **free disk space** that fits the game's 32-bit arithmetic (a 4 GB answer wrapped to "less than 1 MB");

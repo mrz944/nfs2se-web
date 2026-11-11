@@ -529,14 +529,29 @@ static void readback_serve(void) {
     pthread_mutex_unlock(&rb_mu);
 }
 
+/* The display's refresh, measured from the renderer's calls (one per vsync: the page's animation
+ * frames, the native window's swaps). glide.c paces the game to it when it's a multiple of 60 Hz,
+ * so game frames and screen refreshes can't drift past each other (a frame shown twice, the next
+ * skipped: a small hitch every few seconds). */
+static double vs_period, vs_last, vs_take;
+double gpu_last_take(void) { return vs_take; }
+double gpu_vsync_period(void) {
+    if (gpu_renderer_seen_reset || !vs_period || now_s() - renderer_seen > 0.25) return 0;
+    double hz = 1.0 / vs_period, n = floor(hz / 60.0 + 0.5);
+    return n >= 1 && fabs(hz - n * 60.0) < 2.5 * n ? vs_period : 0;
+}
+
 int gpu_render(int out_w, int out_h) {
     if (!gl_ready) gl_init();
     renderer_seen = now_s();
+    {   double dt = renderer_seen - vs_last; vs_last = renderer_seen;
+        if (dt > 0.003 && dt < 0.05) vs_period = vs_period ? vs_period * 0.95 + dt * 0.05 : dt; }
     pthread_mutex_lock(&fq_mu);
     GFrame *nf = pending; pending = NULL;
     if (nf) pthread_cond_broadcast(&fq_cv);
     pthread_mutex_unlock(&fq_mu);
     int fresh = nf != NULL;
+    if (nf) vs_take = renderer_seen;
     if (nf) { gpu_frame_free(shown); shown = nf; }
 
     /* which source is current: the GPU frames or software (DirectDraw) frames? */

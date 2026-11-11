@@ -92,3 +92,5 @@ void gpu_frame_free(GFrame *f);
 /* the picture last shown, scaled to w x h RGB565 (top row first), for LFB locks; 1 if done.
  * Waits for the renderer (at most ~0.2 s); 0 when there is none. */
 int gpu_readback565(uint16_t *dst, int w, int h);
+double gpu_vsync_period(void);          /* seconds per display refresh when it's a multiple of 60 Hz, else 0 */
+double gpu_last_take(void);              /* when the renderer last took a new frame (CLOCK_MONOTONIC s) */

@@ -785,9 +785,23 @@ GL_(G2BufferSwap) {
     if (on && interval) {
         struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t);
         double now = (double)t.tv_sec + t.tv_nsec * 1e-9, period = (double)interval / 60.0;
-        if (next < now - period) next = now;          /* fell behind (loading): start over, no catch-up burst */
-        next += period;
-        if (next > now) rt_usleep((unsigned)((next - now) * 1e6));
+        double vp = gpu_vsync_period();
+        if (vp > 0) {
+            /* the screen refreshes at a multiple of 60 Hz: let the display set the pace. The frame
+             * waits in gpu_publish for the renderer to take the one before, which locks it to the
+             * refresh. Faster screens (120, 180, 240 Hz) take a frame every n refreshes: publish it
+             * half a refresh before the n-th one after the last take, so it lands on that one. */
+            double n = floor(period / vp + 0.5);
+            if (n >= 2) {
+                double at = gpu_last_take() + (n - 0.5) * vp;
+                if (at > now && at - now < period) rt_usleep((unsigned)((at - now) * 1e6));
+            }
+            next = now;
+        } else {
+            if (next < now - period) next = now;      /* fell behind (loading): start over, no catch-up burst */
+            next += period;
+            if (next > now) rt_usleep((unsigned)((next - now) * 1e6));
+        }
     }
     return gr_BufferSwap(c, a);
 }
