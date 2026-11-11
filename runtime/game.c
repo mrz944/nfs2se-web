@@ -8,6 +8,10 @@
  * It is set once, after the game has loaded or defaulted its settings, so a name typed in the
  * game still counts for the rest of the session (and the game saves it as usual). */
 #include "rt.h"
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#include <emscripten/threading.h>
+#endif
 
 #define OWN_NAME 0x510d1cu
 #define OWN_NAME_LEN 9
@@ -49,6 +53,17 @@ static void unlock_all(void) {
     done = 1;
 }
 
+/* Lap times for the start page's lap records. Each car (pointers at 0x50f918, car k = player k)
+ * counts its finished laps at +0x230 and keeps each lap's time at +0x238 + 4 * lap (in 1/64 s;
+ * 8 laps at most); +0x1dc is its model code ("MCF1"). The race: track number at 0x50ffec (the
+ * TRxx file: 0 Proving Grounds, 2 Outback ... 8 Monolithic Studios), laps at 0x50ffcc, backwards
+ * at 0x50fff8, mirrored at 0x50fffc. Found by snapshotting the cars while the AI drove laps, and
+ * races set up each way. Each lap the local player finishes goes to the page (Module.onLap). */
+#define CAR_TABLE 0x50f918u
+#define RACE_TRACK 0x50ffecu
+#define RACE_LAPS 0x50ffccu
+#define RACE_BACKWARD 0x50fff8u
+#define RACE_MIRRORED 0x50fffcu
 /* Instant steering (RT_INSTANT_STEER=1, the start page's setting): the wheels reach full lock at
  * once instead of ramping. Each physics tick (0x468b10) the game moves a car's steering (+0x2e4)
  * toward where the controls point (+0x2e0) by at most the car's step (its spec +0x130/+0x134),
@@ -74,8 +89,41 @@ static void instant_steering(void) {
     }
 }
 
+static void lap_report(uint32_t car, int lap, uint32_t ticks) {
+    uint32_t code = RD32(car + 0x1dc);
+    int track = (int)RD32(RACE_TRACK), laps = (int)RD32(RACE_LAPS);
+    int flags = (RD32(RACE_BACKWARD) ? 1 : 0) | (RD32(RACE_MIRRORED) ? 2 : 0) | (instant > 0 ? 16 : 0);
+    char cc[5] = { 0 }; memcpy(cc, &code, 4);
+    for (int i = 0; i < 4; i++) if (cc[i] < 32 || cc[i] > 126) cc[i] = '?';
+    rt_log("game: lap %d/%d %u:%02u.%02u (track %d, flags %#x, car %s)", lap, laps, ticks / 64 / 60, ticks / 64 % 60, ticks % 64 * 100 / 64, track, flags, cc);
+#ifdef __EMSCRIPTEN__
+    MAIN_THREAD_ASYNC_EM_ASM({ if (Module.onLap) Module.onLap($0, $1, $2, $3, $4, $5); }, track, flags, (int)code, lap, laps, (int)ticks);
+#endif
+}
+static void lap_watch(void) {
+    extern int net_local_car(void);
+    static uint32_t seen_car; static int done;               /* laps of seen_car already reported */
+    int me = net_local_car();
+    if (me == -2) return;                                      /* online, own car not known yet */
+    static int watch = -2;                                     /* RT_LAP_CAR=k: report car k's laps instead (testing with the AI) */
+    if (watch == -2) watch = getenv("RT_LAP_CAR") ? atoi(getenv("RT_LAP_CAR")) & 7 : -1;
+    uint32_t car = RD32(CAR_TABLE + 4u * (uint32_t)(watch >= 0 ? watch : me >= 0 ? me : 0));
+    if (car < 0x400000u || car + 0x690 >= GUEST_SIZE) { seen_car = 0; return; }
+    int n = (int)RD32(car + 0x230);
+    if (n < 0 || n > 64) return;
+    if (car != seen_car) { seen_car = car; done = n; return; }   /* laps from before: not now */
+    if (n < done) done = n;                                    /* a new race, or a restart */
+    while (done < n && done < 8) {
+        uint32_t ticks = RD32(car + 0x238 + 4u * (uint32_t)done);
+        if (!ticks) break;                                     /* written a moment later */
+        done++;
+        lap_report(car, done, ticks);
+    }
+}
+
 void game_frame(void) {
     set_player_name();
     unlock_all();
     instant_steering();
+    lap_watch();
 }

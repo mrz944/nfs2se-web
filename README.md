@@ -170,6 +170,7 @@ much easier to chase than in a browser.
 | `RT_TEX_DUMP=1` | write each converted texture to `build/tex/` as a PPM |
 | `RT_MEMDUMP=s:n:every` · `RT_CARDUMP=file` (`RT_CARDUMP_MS`) | guest memory snapshots · the 8 car records and game data over time |
 | `WWATCH=1 ./build.sh` → `build/nfs2se-wwatch` with `RT_WWATCH=addr:len` · `RT_RWATCH=addr:len` | log the game's writes / reads there, with the lifted line (its comment names the x86 instruction) |
+| `RT_LAP_CAR=k` | report car k's laps instead of the player's (testing lap records with the AI) |
 | `RT_VSYNC=0` | don't pace `grBufferSwap` to 60 Hz |
 | `RT_MULTICORE=1` | run game threads truly in parallel (the movie player may then fail) |
 | `./re NFS2SEA.EXE dis\|func\|xref\|str …` | disassembler and cross-references for the exe |
@@ -182,6 +183,8 @@ much easier to chase than in a browser.
   smoother play ported (each player's own car reacts like the host's; see [docs/online.md](docs/online.md))
 - ✅ Your lobby name is your name in the game (filled in at CONNECT)
 - ✅ Bonus cars (Bomber BFS, Tombstone, FZR 2000) and the Monolithic Studios track unlocked (Game Settings)
+- ✅ Lap records on the start page: each racer's best lap per track and direction (the runtime reads
+  the lap times off the game, `runtime/game.c`; the server keeps them, `web/laps.mjs`)
 - ✅ Instant steering (Game Settings): the wheels reach full lock at once, as with a joystick
 - ✅ Phones and tablets: on-screen touch controls; iPhones on iOS 18 can save the game files (OPFS
   worker), with an Add to Home Screen hint for fullscreen

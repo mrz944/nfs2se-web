@@ -747,6 +747,7 @@ async function start() {
   status('Loading the recompiled game…');
   log('settings:', Object.entries(settings).map(([k, v]) => `${k}=${v}`).join(' '));
   await modsSettled();                                               // mods switched on just now: let them finish copying
+  try { modsOn = (await moddedPaths(await gameDir())).size > 0; } catch { modsOn = false; }
   // NFS II SE has no ini to patch; the player name is typed in the game (Player One)
   const startT = performance.now();
   const dev = await deviceInfo();
@@ -763,6 +764,7 @@ async function start() {
     monitorRunDependencies: (n) => log('[emscripten] pending dependencies:', n),
     onAbort: (what) => { log('ABORT', what); track('error', { kind: 'abort', msg: String(what) }); gameStopped('The game stopped: ' + what); },
     onGameMessage: (t) => { log('ERROR game message:', t); track('error', { kind: 'message', msg: t }); },
+    onLap: reportLap,                                                // each lap the player finishes (game.c)
     onGameExit: (code) => {
       if (code === 0) { log('game quit: back to the start page'); backToPage(); return; }
       log('ERROR game exited, code', code); track('error', { kind: 'exit', msg: 'code ' + code }); gameStopped('The game closed itself (see the log). Reload the page to start again.');
@@ -1070,6 +1072,71 @@ function setupOnline() {
   connect();
 }
 
+// ---------------------------------------------------------------- lap records
+// The runtime reports each lap the player finishes (Module.onLap, runtime/game.c): the track
+// number (the game's TRxx file), flags (FLAG in laps.mjs: backward, mirrored), the car's model
+// code, the lap, the race's laps and the time in the game's 1/64 s ticks. They go to /__lap
+// (laps.mjs), unless mods are on; the start page shows the boards from /__laps.
+const TRACKS = { 0: 'Proving Grounds', 2: 'Outback', 3: 'Last Resort', 4: 'North Country', 5: 'Pacific Spirit', 6: 'Mediterraneo', 7: 'Mystic Peaks', 8: 'Monolithic Studios' };
+const CARS = {
+  mcf1: 'McLaren F1', ff50: 'Ferrari F50', f355: 'Ferrari 355 F1', gt90: 'Ford GT90', idgo: 'Ford Indigo', mach: 'Mustang Mach III',
+  jagr: 'Jaguar XJ220', lgt1: 'Lotus GT1', espr: 'Lotus Esprit V8', nazc: 'Italdesign Nazca C2', cala: 'Italdesign Cala', isde: 'Isdera 112i',
+  chev: 'Bomber BFS', dayt: 'Tombstone', futr: 'FZR 2000',
+};
+const LAP_TAGS = [[16, 'IS', 'instant steering'], [2, 'MIR', 'mirrored']];
+const trackName = (t) => TRACKS[t] || `Track ${t}`;
+const carName = (c) => CARS[c] || String(c).toUpperCase();
+const lapTime = (t) => `${Math.floor(t / 3840)}:${String(Math.floor(t / 64) % 60).padStart(2, '0')}.${String(Math.floor((t % 64) * 100 / 64)).padStart(2, '0')}`;
+let modsOn = false;
+function reportLap(track, flags, code, lap, laps, ticks) {
+  const car = String.fromCharCode(code & 255, (code >>> 8) & 255, (code >>> 16) & 255, code >>> 24).replace(/\0[^]*$/, '').toLowerCase();
+  log(`lap ${lap}/${laps}: ${lapTime(ticks)} on ${trackName(track)}${flags & 1 ? ' backward' : ''} in the ${carName(car)}${modsOn ? ' (mods on: not sent to the lap records)' : ''}`);
+  if (modsOn) return;
+  const n = cleanName($('pname')?.value).trim();
+  if (!n) return;
+  fetch('__lap', { method: 'POST', headers: { 'Content-Type': 'application/json' }, keepalive: true,
+    body: JSON.stringify({ n, track, f: flags & 31, car, lap, laps, ticks, b: buildInfo?.built || '' }) })
+    .then((r) => r.ok && r.json()).then((d) => { if (d?.best) log('lap records: a new best lap for', n); }).catch(() => {});
+}
+function setupLaps() {
+  const sel = $('laps-track');
+  let data = null, dir = 'f', want = '0';
+  try { want = localStorage.getItem('nfs2se.lapsTrack') || want; dir = localStorage.getItem('nfs2se.lapsDir') === 'b' ? 'b' : 'f'; } catch {}
+  for (const b of $('laps-dir').children) b.classList.toggle('on', b.dataset.d === dir);
+  const board = (t, d) => data?.boards?.[`${t}:${d}`] || [];
+  function options() {
+    const ids = new Set(Object.keys(TRACKS).map(Number));
+    for (const k of Object.keys(data?.boards || {})) ids.add(Number(k.split(':')[0]));
+    sel.replaceChildren(...[...ids].sort((a, b) => a - b).map((i) => {
+      const n = board(i, 'f').length + board(i, 'b').length;
+      return el('option', { value: String(i), textContent: trackName(i) + (n ? `  (${n})` : '') });
+    }));
+    sel.value = ids.has(Number(want)) ? want : '0';
+  }
+  function draw() {
+    const me = cleanName($('pname')?.value).trim(), rows = board(sel.value, dir);
+    const age = (t) => { const d = Math.floor((Date.now() - t) / 864e5); return d < 1 ? 'today' : d === 1 ? 'yesterday' : d < 60 ? `${d} days ago` : new Date(t).toLocaleDateString(); };
+    $('laps-list').replaceChildren(...(rows.length ? rows.map((r, i) => el('li', { className: r.n === me ? 'me' : '' },
+      el('span', { className: 'r', textContent: i + 1 }), el('span', { className: 'n', textContent: r.n }),
+      el('span', { className: 'tm', textContent: lapTime(r.ticks) }),
+      el('span', { className: 'c', textContent: carName(r.car), title: age(r.t) }, ...LAP_TAGS.filter(([b]) => r.f & b).map(([, t, title]) => el('span', { className: 'ltag', textContent: t, title })))))
+      : [el('li', { className: 'muted', textContent: `No laps on ${trackName(Number(sel.value))} ${dir === 'b' ? 'backwards' : 'forwards'} yet. Finish one and it shows here.` })]));
+    const names = new Set(); for (const b of Object.values(data?.boards || {})) for (const r of b) names.add(r.n);
+    $('laps-count').textContent = names.size ? `${names.size} racer${names.size === 1 ? '' : 's'}` : 'no laps yet';
+  }
+  sel.onchange = () => { want = sel.value; try { localStorage.setItem('nfs2se.lapsTrack', want); } catch {} draw(); };
+  $('laps-dir').onclick = (e) => {
+    const d = e.target.dataset?.d; if (!d) return;
+    dir = d; try { localStorage.setItem('nfs2se.lapsDir', dir); } catch {}
+    for (const b of $('laps-dir').children) b.classList.toggle('on', b === e.target);
+    draw();
+  };
+  $('pname')?.addEventListener('input', () => data && draw());
+  const poll = () => fetch('__laps', { cache: 'no-store' }).then((r) => r.ok && r.json()).then((d) => { if (d) { data = d; options(); draw(); } }).catch(() => {});
+  options(); draw(); poll();
+  setInterval(() => { if (!gameStarted) poll(); }, 60000);
+}
+
 // ---------------------------------------------------------------- activity
 // Start page: who is around (/__live on serve.mjs), the most active racers, the daily race,
 // push notifications, and a note when the server has a newer build than this page.
@@ -1171,6 +1238,7 @@ async function init() {
   $('tip').textContent = TIPS[Math.floor(Math.random() * TIPS.length)];
   setupOnline();
   setupActivity();
+  setupLaps();
   watchPads();
   showHomeScreenCard();
   if (isWebApp()) log('started from the home screen (web app)');
