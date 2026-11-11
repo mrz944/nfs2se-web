@@ -164,6 +164,8 @@ much easier to chase than in a browser.
 | `RT_WATCH_AT=s` | dump every thread and the single-core lock at that time |
 | `RT_PROF=file` | sampling profiler (`tools/prof.py`) |
 | `RT_FOG_LOG=1` · `RT_TEX_LOG=1..3` | log fog and gamma calls · texture conversions |
+| `RT_PICK=x,y,from_s,every` · `RT_PICK_BOX=w,h` | log every draw covering a pixel (or box): texture, combine state, vertices |
+| `RT_TEX_DUMP=1` | write each converted texture to `build/tex/` as a PPM |
 | `RT_VSYNC=0` | don't pace `grBufferSwap` to 60 Hz |
 | `RT_MULTICORE=1` | run game threads truly in parallel (the movie player may then fail) |
 | `./re NFS2SEA.EXE dis\|func\|xref\|str …` | disassembler and cross-references for the exe |

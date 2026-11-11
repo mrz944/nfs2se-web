@@ -273,6 +273,13 @@ static int tex_convert(int slot) {
         for (int i = 0; i < lw * lh; i++) out[o + (uint32_t)i] = px_argb(k->fmt, src + (uint32_t)i * bpp);
         src += (uint32_t)(lw * lh) * bpp; o += (uint32_t)(lw * lh);
     }
+    if (getenv("RT_TEX_DUMP")) {   /* debugging: every converted texture's top level as build/tex/<slot>_<addr>.ppm */
+        char fn[96]; snprintf(fn, sizeof fn, "build/tex/%d_%x.ppm", slot, k->start);
+        FILE *fp = fopen(fn, "wb");
+        if (fp) { fprintf(fp, "P6\n%d %d\n255\n", w, h); for (int i = 0; i < w * h; i++) { uint8_t px[3] = { (uint8_t)out[i], (uint8_t)(out[i] >> 8), (uint8_t)(out[i] >> 16) }; fwrite(px, 1, 3, fp); } fclose(fp); }
+        int a0 = 0; for (int i = 0; i < w * h; i++) a0 += (out[i] >> 24) < 128;
+        rt_log("TEXDUMP %s: %dx%d fmt %#x, %d of %d texels transparent", fn, w, h, k->fmt, a0, w * h);
+    }
     gpu_tex_lock();
     GTex *t = gpu_tex(slot);
     free(t->rgba);
@@ -562,9 +569,54 @@ GL_(BufferClear) {
     memcpy(k->clip, st.clip, sizeof k->clip);
     return 0;
 }
+/* RT_PICK=x,y,from_s,every: debugging. Every `every`-th frame after from_s seconds, log each draw
+ * that covers pixel x,y (game coords), in order: its texture and combine state. */
+static void pick_log(GFrame *f) {
+    static int on = -1; static float px, py; static double from; static int every = 30, n;
+    if (on < 0) { const char *e = getenv("RT_PICK"); on = e && sscanf(e, "%f,%f,%lf,%d", &px, &py, &from, &every) >= 2; if (every < 1) every = 1; }
+    if (!on) return;
+    static int pick_box = -1; static float pick_w, pick_h;
+    if (pick_box < 0) { const char *b = getenv("RT_PICK_BOX"); pick_box = b && sscanf(b, "%f,%f", &pick_w, &pick_h) == 2; }
+    struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t);
+    static double t0; double now = (double)t.tv_sec + t.tv_nsec * 1e-9; if (!t0) t0 = now;
+    if (now - t0 < from || n++ % every) return;
+    rt_log("PICK swap %u at %.2f s: %u cmds", swaps, now - t0, f->ncmds);
+    for (uint32_t i = 0; i < f->ncmds; i++) {
+        const GCmd *k = &f->cmds[i];
+        if (k->type == GC_CLEAR) { rt_log("PICK  #%u clear %#x", i, k->color); continue; }
+        if (k->type != GC_DRAW) continue;
+        for (uint32_t j = k->first; j < k->first + k->count; j += 3) {
+            const GVert *v = &f->verts[j];
+            float d = (v[1].x - v[0].x) * (v[2].y - v[0].y) - (v[2].x - v[0].x) * (v[1].y - v[0].y);
+            if (d == 0) continue;
+            float l1 = ((v[1].x - px) * (v[2].y - py) - (v[2].x - px) * (v[1].y - py)) / d;
+            float l2 = ((v[2].x - px) * (v[0].y - py) - (v[0].x - px) * (v[2].y - py)) / d;
+            float l3 = 1 - l1 - l2;
+            if (pick_box) {   /* RT_PICK_BOX=w,h: any triangle touching the box px..px+w, py..py+h */
+                float mnx = fminf(v[0].x, fminf(v[1].x, v[2].x)), mxx = fmaxf(v[0].x, fmaxf(v[1].x, v[2].x));
+                float mny = fminf(v[0].y, fminf(v[1].y, v[2].y)), mxy = fmaxf(v[0].y, fmaxf(v[1].y, v[2].y));
+                if (mxx < px || mnx > px + pick_w || mxy < py || mny > py + pick_h) continue;
+                l1 = l2 = 1.0f / 3; l3 = 1.0f / 3;
+            } else if (l1 < 0 || l2 < 0 || l3 < 0) continue;
+            const GState *s = &f->states[k->state];
+            const TexKey *tk = s->tex >= 0 ? &tkeys[s->tex] : NULL;
+            float S = l1 * v[0].s / v[0].w + l2 * v[1].s / v[1].w + l3 * v[2].s / v[2].w, W = l1 / v[0].w + l2 / v[1].w + l3 / v[2].w;
+            float T = (l1 * v[0].t / v[0].w + l2 * v[1].t / v[1].w + l3 * v[2].t / v[2].w) / W; S /= W;
+            rt_log("PICK  #%u tex %d @%#x fmt %#x lod %d..%d asp %d used %d | cc %u/%u/%u/%u/%u ac %u/%u/%u/%u/%u tc %u/%u | blend %u/%u atest %u/%u chroma %u fog %u depth %u/%u/%u clip %d,%d,%d,%d bias %d | rgba %.2f,%.2f,%.2f,%.2f st %.3f,%.3f w %.1f",
+                   i, s->tex, tk ? tk->start : 0, tk ? tk->fmt : -1, tk ? tk->small : 0, tk ? tk->large : 0, tk ? tk->aspect : 0, tk ? tk->used : 0,
+                   s->cc_func, s->cc_factor, s->cc_local, s->cc_other, s->cc_invert, s->ac_func, s->ac_factor, s->ac_local, s->ac_other, s->ac_invert,
+                   s->tc_rgb_func, s->tc_rgb_factor, s->blend_src, s->blend_dst, s->alpha_test, s->alpha_ref, s->chroma_mode, s->fog_mode,
+                   s->depth_mode, s->depth_func, s->depth_mask, s->clip[0], s->clip[1], s->clip[2], s->clip[3], s->depth_bias, v[0].r, v[0].g, v[0].b, v[0].a, S, T, v[0].w);
+            rt_log("PICK     v0 %.1f,%.1f c %.2f w %.2f | v1 %.1f,%.1f c %.2f w %.2f | v2 %.1f,%.1f c %.2f w %.2f", v[0].x, v[0].y, v[0].r, v[0].w, v[1].x, v[1].y, v[1].r, v[1].w, v[2].x, v[2].y, v[2].r, v[2].w);
+            break;
+        }
+    }
+}
+
 GL_(BufferSwap) {
     (void)c; (void)a;
     frame_begin();
+    pick_log(cur);
     cur->gamma = gamma_value;
     GFrame *f = cur; cur = NULL;
     gpu_publish(f);
