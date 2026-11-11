@@ -180,6 +180,8 @@ much easier to chase than in a browser.
   smoother play ported (each player's own car reacts like the host's; see [docs/online.md](docs/online.md))
 - ✅ Your lobby name is your name in the game (filled in at CONNECT)
 - ✅ Bonus cars (Bomber BFS, Tombstone, FZR 2000) and the Monolithic Studios track unlocked (Game Settings)
+- ✅ Phones and tablets: on-screen touch controls; iPhones on iOS 18 can save the game files (OPFS
+  worker), with an Add to Home Screen hint for fullscreen
 - 🚧 Next: wider testing with more players and real internet links
 
 ## Credits

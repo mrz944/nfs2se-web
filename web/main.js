@@ -6,6 +6,7 @@
 //     into a lock-free ring; audio comes out of a ring through an AudioWorklet.
 
 import { setupMods, moddedPaths, forgetMods, modsSettled } from './mods.js';
+import { openWritable, writeFile } from './opfs.js';
 
 const $ = (id) => document.getElementById(id);
 const status = (msg, err = false) => { $('status').textContent = msg; $('status').className = err ? 'err' : ''; };
@@ -102,7 +103,7 @@ async function packSource() {
   } catch { return null; }
 }
 async function readText(dir, name) { try { return await (await (await dir.getFileHandle(name)).getFile()).text(); } catch { return null; } }
-async function writeText(dir, name, text) { const w = await (await dir.getFileHandle(name, { create: true })).createWritable(); await w.write(text); await w.close(); }
+async function writeText(dir, name, text) { await writeFile(dir, name, text); }
 async function importPack(base) {
   status('Checking the game download…');
   const ir = await fetch(base + 'index.json');
@@ -150,7 +151,7 @@ async function importPack(base) {
         for (const [path, size] of c.files) {
           const fh = await (await subdir(path)).getFileHandle(path.split('/').at(-1), { create: true });
           const isIni = path.toLowerCase() === 'nfs2se.ini', ini = [];
-          const w = await fh.createWritable();
+          const w = await openWritable(fh);
           let left = size;
           while (left > 0) {
             if (!buf.length) await pull();
@@ -267,7 +268,7 @@ async function writeGameName(name) {
   log(`name: the game will call you "${name}"`);
 }
 async function fileBytes(dir, name) { try { return new Uint8Array(await (await (await dir.getFileHandle(name)).getFile()).arrayBuffer()); } catch { return null; } }
-async function writeBytes(dir, name, bytes) { const w = await (await dir.getFileHandle(name, { create: true })).createWritable(); await w.write(exact(bytes)); await w.close(); }
+async function writeBytes(dir, name, bytes) { await writeFile(dir, name, exact(bytes)); }
 
 // --------------------------------------------------------------- settings
 // Game Settings on the start page, kept in this browser (localStorage nfs2se.settings) and used
@@ -308,7 +309,7 @@ async function ensureIni() {
     const d = await gameDir();
     const fh = await d.getFileHandle('nfs2se.ini');
     const t = await (await fh.getFile()).text(), u = patchIni(t, settings.movies);
-    if (u !== t) { const w = await fh.createWritable(); await w.write(u); await w.close(); log(`nfs2se.ini: ThrashDriver=glide3x, NoMovies=${settings.movies ? 0 : 1}`); }
+    if (u !== t) { const w = await openWritable(fh); await w.write(u); await w.close(); log(`nfs2se.ini: ThrashDriver=glide3x, NoMovies=${settings.movies ? 0 : 1}`); }
   } catch (e) { log('nfs2se.ini not patched:', e.message); }
 }
 
@@ -339,7 +340,7 @@ async function importFolder(files) {
     for (const p of parts.slice(0, -1)) d = await d.getDirectoryHandle(p, { create: true });
     const fh = await d.getFileHandle(parts.at(-1), { create: true });
     const src = f.blob ? await f.blob() : f;
-    const w = await fh.createWritable();
+    const w = await openWritable(fh);
     if (parts.length === 1 && parts[0].toLowerCase() === 'nfs2se.ini') {
       const ini = patchIni(await src.text());
       await w.write(ini);
@@ -351,7 +352,7 @@ async function importFolder(files) {
     $('progress').value = done / total;
     status(`Copying game files… ${(done / 2 ** 20).toFixed(0)} / ${(total / 2 ** 20).toFixed(0)} MB`);
   }
-  const marker = await (await dir.getFileHandle('.download-complete', { create: true })).createWritable();
+  const marker = await openWritable(await dir.getFileHandle('.download-complete', { create: true }));
   await marker.write('complete'); await marker.close();
   $('progress').hidden = true;
 }
@@ -389,9 +390,38 @@ async function toggleFullscreen() {
     await (el.requestFullscreen ? el.requestFullscreen({ navigationUI: 'hide' }) : el.webkitRequestFullscreen());
   } catch (e) { log('fullscreen:', e.message || e); }
 }
+// iPhone Safari lets only videos go fullscreen; the page opened from a home-screen icon (a web
+// app) has no browser bars at all, so on an iPhone the button and a card say how to do that.
+const isIPhone = () => /iPhone|iPod/.test(navigator.userAgent) || new URLSearchParams(location.search).get('iphone') === '1';
+const isWebApp = () => navigator.standalone === true || matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches;
+const wantHomeScreenTip = () => !fsSupported() && isIPhone() && !isWebApp();
+function showHomeScreenCard() {               // on the start page, until "Got it"
+  if (!wantHomeScreenTip()) return;
+  const card = $('ios-app');
+  let seen = false;
+  try { seen = localStorage.getItem('nfs2se.homeScreenTip') === '1'; } catch {}
+  card.hidden = seen;
+  $('ios-app-ok').addEventListener('click', () => { card.hidden = true; try { localStorage.setItem('nfs2se.homeScreenTip', '1'); } catch {} });
+}
+function setupHomeScreenTip() {               // in the game: the fullscreen button shows how
+  const b = $('fullscreen'), tip = $('fstip');
+  b.hidden = false;
+  b.title = 'Fullscreen'; b.setAttribute('aria-label', 'How to play fullscreen');
+  let timer = 0;
+  const hide = () => { tip.hidden = true; clearTimeout(timer); };
+  b.addEventListener('click', (ev) => {
+    ev.stopPropagation(); b.blur();
+    if (!tip.hidden) return hide();
+    tip.hidden = false; clearTimeout(timer); timer = setTimeout(hide, 9000);
+  });
+  tip.addEventListener('click', hide);
+}
 function setupFullscreen() {
   const b = $('fullscreen');
-  if (!fsSupported()) return;                 // iPhone Safari: only videos can go fullscreen
+  if (!fsSupported()) {                       // iPhone Safari: only videos can go fullscreen
+    if (wantHomeScreenTip()) setupHomeScreenTip();
+    return;
+  }
   b.hidden = false;
   b.addEventListener('click', (ev) => { ev.stopPropagation(); b.blur(); toggleFullscreen(); });
   const changed = () => {
@@ -466,7 +496,95 @@ function attachInput(mod, canvas) {
   canvas.addEventListener('mouseup', (ev) => { if (document.pointerLockElement === canvas) push(3, ev.button === 2 ? 3 : 1, 0); });
   canvas.addEventListener('wheel', (ev) => { push(4, ev.deltaY < 0 ? 120 : -120, 0); ev.preventDefault(); }, { passive: false });
   canvas.addEventListener('contextmenu', (ev) => ev.preventDefault());
+  if (touchWanted()) setupTouch(mod, canvas, push, keyIndex);
   return (code, down) => { const idx = keyIndex[code]; if (idx !== undefined && idx >= 0) push(1, idx, down ? 1 : 0); };
+}
+
+// ------------------------------------------------------------------- touch
+// Phones and tablets: on-screen buttons over the game, held down like keys (arrows steer, gas and
+// brake, and also move through the menus; OK = Enter, ESC = Esc, HB = handbrake). A finger can slide
+// from one button to the next. A finger on the picture itself is the mouse: the cursor jumps to it,
+// follows it, and lifting it clicks. ?touch=1 shows the buttons anywhere, ?touch=0 hides them.
+function touchWanted() {
+  const q = new URLSearchParams(location.search).get('touch');
+  if (q != null) return q !== '0';
+  return navigator.maxTouchPoints > 0 && matchMedia('(pointer: coarse)').matches;
+}
+function setupTouch(mod, canvas, push, keyIndex) {
+  const box = $('touch');
+  box.hidden = false; document.body.classList.add('touch');
+  log('touch controls on');
+  const held = {};                                     // key -> fingers on it
+  const press = (code, down) => {
+    const n = Math.max(0, (held[code] || 0) + (down ? 1 : -1)), was = held[code] || 0;
+    held[code] = n;
+    if ((was === 0) !== (n === 0)) { const idx = keyIndex[code]; if (idx >= 0) push(1, idx, n ? 1 : 0); }
+    for (const b of box.querySelectorAll(`[data-key="${code}"]`)) b.classList.toggle('on', n > 0);
+  };
+  const fingers = new Map();                           // pointerId -> key under it (or null)
+  const keyAt = (x, y) => document.elementFromPoint(x, y)?.closest?.('#touch [data-key]')?.dataset.key || null;
+  box.addEventListener('pointerdown', (ev) => {
+    const b = ev.target.closest('[data-key]');
+    if (!b) return;
+    ev.preventDefault();
+    try { b.releasePointerCapture(ev.pointerId); } catch {}   // so the finger can slide to another button
+    fingers.set(ev.pointerId, b.dataset.key); press(b.dataset.key, true);
+  });
+  window.addEventListener('pointermove', (ev) => {
+    if (!fingers.has(ev.pointerId)) return;
+    const was = fingers.get(ev.pointerId), now = keyAt(ev.clientX, ev.clientY);
+    if (now === was) return;
+    if (was) press(was, false);
+    if (now) press(now, true);
+    fingers.set(ev.pointerId, now);
+  });
+  const lift = (ev) => {
+    if (!fingers.has(ev.pointerId)) return;
+    const was = fingers.get(ev.pointerId); fingers.delete(ev.pointerId);
+    if (was) press(was, false);
+  };
+  window.addEventListener('pointerup', lift);
+  window.addEventListener('pointercancel', lift);
+  const releaseAll = () => { for (const [id, k] of fingers) { fingers.delete(id); if (k) press(k, false); } };
+  document.addEventListener('visibilitychange', () => { if (document.hidden) releaseAll(); });
+  box.addEventListener('contextmenu', (ev) => ev.preventDefault());
+
+  // the mouse: where the game's 640x480 picture is in the canvas (letterboxed like runtime/gpu.c).
+  // The game's cursor moves one pixel per mouse step (runtime/dinput.c at its default scale).
+  const picture = () => {
+    const r = canvas.getBoundingClientRect();
+    let w = r.width, h = r.height;
+    if (w / h > 4 / 3) w = h * 4 / 3; else h = w * 3 / 4;
+    return { x: r.left + (r.width - w) / 2, y: r.top + (r.height - h) / 2, sx: 640 / w, sy: 480 / h };
+  };
+  let cur = null;                                      // { id, x, y, down } the finger driving the cursor
+  canvas.addEventListener('pointerdown', (ev) => {
+    if (ev.pointerType === 'mouse' || cur) return;
+    ev.preventDefault();
+    const p = picture();
+    cur = { id: ev.pointerId, x: ev.clientX, y: ev.clientY, p, down: false, fx: 0, fy: 0 };
+    // the game's cursor is relative (DirectInput): push it into the top-left corner, then to the finger
+    push(2, -4000, -4000);
+    push(2, Math.round((ev.clientX - p.x) * p.sx), Math.round((ev.clientY - p.y) * p.sy));
+    const c = cur;
+    setTimeout(() => { if (cur === c) { c.down = true; push(3, 1, 1); } }, 60);   // after the game has seen the cursor arrive
+  });
+  canvas.addEventListener('pointermove', (ev) => {
+    if (!cur || ev.pointerId !== cur.id) return;
+    cur.fx += (ev.clientX - cur.x) * cur.p.sx; cur.fy += (ev.clientY - cur.y) * cur.p.sy;
+    cur.x = ev.clientX; cur.y = ev.clientY;
+    const dx = Math.trunc(cur.fx), dy = Math.trunc(cur.fy);
+    cur.fx -= dx; cur.fy -= dy;
+    if (dx || dy) push(2, dx, dy);
+  });
+  const up = (ev) => {
+    if (!cur || ev.pointerId !== cur.id) return;
+    const c = cur; cur = null;
+    if (c.down) push(3, 1, 0);
+    else { push(3, 1, 1); setTimeout(() => push(3, 1, 0), 60); }   // a quick tap: still a whole click
+  };
+  canvas.addEventListener('pointerup', up);
+  canvas.addEventListener('pointercancel', up);
 }
 
 // ------------------------------------------------------------------- controllers
@@ -1053,6 +1171,8 @@ async function init() {
   setupOnline();
   setupActivity();
   watchPads();
+  showHomeScreenCard();
+  if (isWebApp()) log('started from the home screen (web app)');
   log('page loaded; crossOriginIsolated =', crossOriginIsolated, '; SharedArrayBuffer =', typeof SharedArrayBuffer);
   if (!crossOriginIsolated) {
     // the server sends COOP/COEP (serve.mjs); a browser that still isn't isolated is too old or locked down
