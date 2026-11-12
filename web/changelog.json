@@ -1,0 +1,31 @@
+{
+  "game": "NFS II SE",
+  "about": "What changed on nfs2se.xyz, day by day. Kinds: new, improved, fixed. Days run 05:00 to 05:00 Polish time. nfs3-webgl's tools/discord/changelog.mjs posts them to Discord.",
+  "days": [
+    { "date": "2026-11-12", "items": [
+      ["new", "Discord server for help, bug reports, ideas and finding races: linked in the menu and in the early-version note."],
+      ["new", "What's New: this list of changes, day by day."]
+    ] },
+    { "date": "2026-11-11", "items": [
+      ["new", "Lap Records on the start page: every racer's best lap on each track, in both directions. Laps driven with mods on don't count."],
+      ["new", "Instant steering (Game Settings): the wheels turn to full lock at once, like with a joystick back in the day."]
+    ] },
+    { "date": "2026-11-10", "items": [
+      ["new", "Phones and tablets: on-screen buttons to steer, brake and accelerate; a finger on the picture works as the mouse."],
+      ["new", "iPhone: the game files now save on iOS 18, and the page shows how to get fullscreen with Add to Home Screen."],
+      ["new", "Bonus cars (Bomber BFS, Tombstone, FZR 2000) and the Monolithic Studios track unlocked (Game Settings, on by default)."],
+      ["fixed", "The picture was too dark, night tracks nearly black: the game's own brightness setting and fog are now used."],
+      ["fixed", "Cars driving into a shadow lost their textures in black speckles."],
+      ["improved", "On 60, 120 and 240 Hz screens every frame is shown once: no more small hitches."],
+      ["improved", "Sharpness starts at Auto; the Resolutions option, which did nothing in this game, is gone."],
+      ["fixed", "Long sessions no longer run out of memory."]
+    ] },
+    { "date": "2026-11-09", "items": [
+      ["new", "First version: Need for Speed II: Special Edition (the 3dfx version) recompiled to WebAssembly. The game files download automatically, once."],
+      ["new", "A start page in the style of the game's menus."],
+      ["new", "Online races: lobby, rooms and invite links; the game's network screens draw correctly, and your car reacts at once even when someone else hosts."],
+      ["new", "Your lobby name is your name in the game (up to 8 characters)."],
+      ["fixed", "Cars flashed other cars' colours; each car now keeps its own."]
+    ] }
+  ]
+}
