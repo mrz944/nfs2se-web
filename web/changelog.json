@@ -2,6 +2,9 @@
   "game": "NFS II SE",
   "about": "What changed on nfs2se.xyz, day by day. Kinds: new, improved, fixed. Days run 05:00 to 05:00 Polish time. nfs3-webgl's tools/discord/changelog.mjs posts them to Discord.",
   "days": [
+    { "date": "2026-11-13", "items": [
+      ["improved", "Smoother on slow computers and Chromebooks: drawing a frame takes about a tenth of the browser work it did, leaving more of the CPU to the game."]
+    ] },
     { "date": "2026-11-12", "items": [
       ["new", "Discord server for help, bug reports, ideas and finding races: linked in the menu and in the early-version note."],
       ["new", "What's New: this list of changes, day by day."]

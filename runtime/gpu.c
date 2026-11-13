@@ -385,11 +385,22 @@ static void ensure_fbo(int w, int h) {
     fbo_w = w; fbo_h = h;
 }
 
+/* The state apply_state last sent, so a state change sends only what differs. Most changes are
+ * just another texture, and each WebGL call costs on the browser's main thread and in its GPU
+ * process: re-sending all of it was about 20 calls a change, some 10,000 a frame in a race, which
+ * on a 2-core Chromebook left the game too little CPU. Uniforms, blend function, depth function
+ * and the scissor box are set only through here, so what's kept stays true; enables, the depth
+ * mask and texture unit 0's binding are changed elsewhere too (clears, LFB writes, the blit), so
+ * those are forgotten (gl_known = 0) at the start of each frame and after those. */
+static int gl_known, uni_known;
+static GLuint bound_tex;
+static void bind_tex0(GLuint t) { if (bound_tex != t) { glBindTexture(GL_TEXTURE_2D, t); bound_tex = t; } }
+
 static void upload_tex(int slot) {
     GTex *t = &texs[slot];
     if (!t->rgba) return;
     if (!gltex[slot]) glGenTextures(1, &gltex[slot]);
-    glBindTexture(GL_TEXTURE_2D, gltex[slot]);
+    bind_tex0(gltex[slot]);
     if (gltex_ver[slot] == t->version) return;
     const uint32_t *p = t->rgba; int w = t->w, h = t->h;
     for (int l = 0; l < t->levels; l++) {
@@ -416,12 +427,21 @@ static void color4(GLint loc, uint32_t argb) {
 
 static int scale;
 static void scissor(const int16_t *clip, int fh) {
+    static GLint last[4]; static int known;
     int x0 = clip[0], y0 = clip[1], x1 = clip[2], y1 = clip[3];
     if (x1 < x0) x1 = x0; if (y1 < y0) y1 = y0;
-    glScissor(x0 * scale, (fh - y1) * scale, (x1 - x0) * scale, (y1 - y0) * scale);
+    GLint r[4] = { x0 * scale, (fh - y1) * scale, (x1 - x0) * scale, (y1 - y0) * scale };
+    if (known && !memcmp(r, last, sizeof r)) return;
+    glScissor(r[0], r[1], r[2], r[3]); memcpy(last, r, sizeof r); known = 1;
 }
 
+/* set a uniform only when its value changed (see gl_known) */
+#define UNI1(type, v, call) do { static type last_; type v_ = (v); if (!uni_known || last_ != v_) { last_ = v_; call; } } while (0)
+#define UNI4I(loc, a, b, c, d) do { static GLint last_[4]; GLint v_[4] = { a, b, c, d }; \
+    if (!uni_known || memcmp(last_, v_, sizeof v_)) { memcpy(last_, v_, sizeof v_); glUniform4i(loc, v_[0], v_[1], v_[2], v_[3]); } } while (0)
+
 static void apply_state(const GState *s, const GFrame *f) {
+    if (!gl_known) bound_tex = 0;      /* 0 is no texture of ours: the next bind_tex0 binds */
     int has_tex = s->tex >= 0 && s->tex < GPU_MAX_TEX && texs[s->tex].rgba;
     if (has_tex) {
         upload_tex(s->tex);
@@ -437,18 +457,28 @@ static void apply_state(const GState *s, const GFrame *f) {
             gltex_par[s->tex] = par;
         }
     }
-    glUniform1i(u_has_tex, has_tex);
-    glUniform4i(u_cc, s->cc_func, s->cc_factor, s->cc_local, s->cc_other);
-    glUniform4i(u_ac, s->ac_func, s->ac_factor, s->ac_local, s->ac_other);
-    glUniform4i(u_tc, s->tc_rgb_func, s->tc_rgb_factor, s->tc_a_func, s->tc_a_factor);
-    glUniform4i(u_inv, s->cc_invert, s->ac_invert, s->tc_rgb_invert, s->tc_a_invert);
-    color4(u_const, s->constant_color); color4(u_fogc, s->fog_color); color4(u_chroma, s->chroma_color);
-    glUniform1i(u_atest, s->alpha_test); glUniform1f(u_aref, (float)s->alpha_ref);
-    glUniform1i(u_fog_on, (s->fog_mode & 0xFF) != 0); glUniform1f(u_fog_row, (s->fog_tab + .5f) / GPU_FOG_TABLES); glUniform1i(u_chroma_on, s->chroma_mode != 0);
-    if (s->blend_src == 4 && s->blend_dst == 0) glDisable(GL_BLEND);
-    else { glEnable(GL_BLEND); glBlendFuncSeparate(blend_gl(s->blend_src, 1), blend_gl(s->blend_dst, 0), blend_gl(s->blend_asrc, 1), blend_gl(s->blend_adst, 0)); }
-    if (s->depth_mode) { glEnable(GL_DEPTH_TEST); glDepthFunc(cmp_gl[s->depth_func & 7]); glDepthMask(s->depth_mask ? GL_TRUE : GL_FALSE); }
-    else { glDisable(GL_DEPTH_TEST); glDepthMask(GL_FALSE); }
+    UNI1(int, has_tex, glUniform1i(u_has_tex, v_));
+    UNI4I(u_cc, s->cc_func, s->cc_factor, s->cc_local, s->cc_other);
+    UNI4I(u_ac, s->ac_func, s->ac_factor, s->ac_local, s->ac_other);
+    UNI4I(u_tc, s->tc_rgb_func, s->tc_rgb_factor, s->tc_a_func, s->tc_a_factor);
+    UNI4I(u_inv, s->cc_invert, s->ac_invert, s->tc_rgb_invert, s->tc_a_invert);
+    UNI1(uint32_t, s->constant_color, color4(u_const, v_)); UNI1(uint32_t, s->fog_color, color4(u_fogc, v_)); UNI1(uint32_t, s->chroma_color, color4(u_chroma, v_));
+    UNI1(int, s->alpha_test, glUniform1i(u_atest, v_)); UNI1(int, s->alpha_ref, glUniform1f(u_aref, (float)v_));
+    UNI1(int, (s->fog_mode & 0xFF) != 0, glUniform1i(u_fog_on, v_)); UNI1(int, s->fog_tab, glUniform1f(u_fog_row, (v_ + .5f) / GPU_FOG_TABLES));
+    UNI1(int, s->chroma_mode != 0, glUniform1i(u_chroma_on, v_));
+    uni_known = 1;
+    static int blend, depth, dmask; static GLenum bf[4], dfunc; static int bf_known, dfunc_known;
+    int b = !(s->blend_src == 4 && s->blend_dst == 0);
+    if (!gl_known || blend != b) { if (b) glEnable(GL_BLEND); else glDisable(GL_BLEND); blend = b; }
+    if (b) {
+        GLenum nb[4] = { blend_gl(s->blend_src, 1), blend_gl(s->blend_dst, 0), blend_gl(s->blend_asrc, 1), blend_gl(s->blend_adst, 0) };
+        if (!bf_known || memcmp(bf, nb, sizeof nb)) { glBlendFuncSeparate(nb[0], nb[1], nb[2], nb[3]); memcpy(bf, nb, sizeof nb); bf_known = 1; }
+    }
+    int d = s->depth_mode != 0, m = d && s->depth_mask;
+    if (!gl_known || depth != d) { if (d) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST); depth = d; }
+    if (d && (!dfunc_known || dfunc != cmp_gl[s->depth_func & 7])) { dfunc = cmp_gl[s->depth_func & 7]; glDepthFunc(dfunc); dfunc_known = 1; }
+    if (!gl_known || dmask != m) { glDepthMask(m ? GL_TRUE : GL_FALSE); dmask = m; }
+    gl_known = 1;
     scissor(s->clip, f->h);
 }
 
@@ -481,6 +511,7 @@ static void render_frame(GFrame *f) {
     }
     glActiveTexture(GL_TEXTURE0);
     uint32_t applied = UINT32_MAX;
+    gl_known = 0;
     gpu_tex_lock();
     for (uint32_t i = 0; i < f->ncmds; i++) {
         GCmd *c = &f->cmds[i];
@@ -496,7 +527,7 @@ static void render_frame(GFrame *f) {
             }
             if (c->clear_depth_on) { bits |= GL_DEPTH_BUFFER_BIT; glDepthMask(GL_TRUE); glClearDepthf(c->depth); }
             if (bits) glClear(bits);
-            applied = UINT32_MAX;
+            applied = UINT32_MAX; gl_known = 0;
         } else if (c->type == GC_LFB) {
             GLfb *l = &f->lfbs[c->lfb];
             glDisable(GL_DEPTH_TEST); glDisable(GL_BLEND); glDisable(GL_SCISSOR_TEST);
@@ -505,7 +536,7 @@ static void render_frame(GFrame *f) {
             draw_quad_tex(ovl_tex, -1, 1, 1, -1, 0, 1);
             glUseProgram(prog);
             glEnable(GL_SCISSOR_TEST);
-            applied = UINT32_MAX;
+            applied = UINT32_MAX; gl_known = 0;
         }
     }
     gpu_tex_unlock();
