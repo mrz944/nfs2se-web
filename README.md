@@ -174,6 +174,8 @@ much easier to chase than in a browser.
 | `RT_VSYNC=0` | don't pace `grBufferSwap` to 60 Hz |
 | `RT_MULTICORE=1` | run game threads truly in parallel (the movie player may then fail) |
 | `RT_SLOW=k[@s][,ns]` | act like a k times slower computer from second s on, each clock read costing ns more (as in the browser); the log's `lock:` line every 10 s shows how the threads share the CPU |
+| `RT_NET_STALL=every:ms` · `RT_SYNC_AHEAD=x` · `RT_SYNC_SNAP=1` | online tests: freeze the game now and then (a slow computer) · move others' cars ahead by x times their delay (default 1) · the old jump-into-place rule |
+| `RT_NET_JITTER=ms` · `RT_PACE=buffer_ms[:standin_ms]` | up to that much extra random delay on incoming packets · the client's steady beat: bundles in hand before the game gets them, and how long stand-ins cover a silent host (default 40:250, 0 = off) |
 | `./re NFS2SEA.EXE dis\|func\|xref\|str …` | disassembler and cross-references for the exe |
 
 ## Status

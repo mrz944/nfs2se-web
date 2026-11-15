@@ -44,8 +44,19 @@ The runtime trades strict lockstep for responsiveness, as NFS3 Web does (`runtim
    is its own from the first controls it sends.
 2. Every player's game is the authority for its own car, the host's for the AI cars: about 30
    times a second each sends those cars' physics state (88 bytes of 16.16 fixed point from car
-   +0x9c: position, velocity, orientation, spin) and the others overwrite theirs, blending small
-   corrections. The host moves a client's car ahead by half the round trip.
+   +0x9c: position, velocity, orientation, spin) and the others overwrite theirs. Each car is moved
+   ahead by the time its update took to arrive (half the round trip the page measures to that
+   player, plus any extra delay seen from the sender's clock in the packet). A position error
+   slides out over a few updates (at most 1.5 m per update) instead of jumping, so a car whose
+   player's computer froze for a moment glides back into place.
+3. Steady beat (`RT_PACE`, from NFS3 Web): a client's whole game only moves on when the host's
+   next bundle arrives, so every late or lost one froze it. The client now keeps about 40 ms of
+   the host's bundles in hand (more when they come late, up to 160 ms) and hands them to the game
+   at the host's own beat; when one is late the game gets a stand-in (the last bundle again) and
+   the real one is dropped when it comes. The game sees our own sequence numbers and its acks are
+   mapped back to the host's, so the host's resends work as before. Only a host silent for more
+   than 250 ms makes the game wait. A line at the end of each race counts bundles, stand-ins,
+   late ones and stalls.
 
 NFS4's own answer to the same problem is its *Positional Updates* mode: each machine drives its
 own car and sends its position. NFS II SE has only lockstep, so smoother play gives it the same
