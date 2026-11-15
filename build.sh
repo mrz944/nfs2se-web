@@ -33,5 +33,5 @@ ls gen/*/*.c gen/modules.c runtime/*.c | xargs -P"$(nproc)" -I{} sh -c '
   d=$(dirname {}); inc=""; [ "$d" != runtime ] && inc="-I$d"
   o='"$OBJ"'/$(echo {} | tr / _ | sed "s/\.c$/.o/")
   if [ ! -f "$o" ] || [ {} -nt "$o" ] || [ runtime/cpu.h -nt "$o" ] || [ runtime/rt.h -nt "$o" ]; then clang '"$CFLAGS"' $inc -c {} -o "$o" || exit 255; fi'
-clang $OBJ/*.o -o $OUT -lm -lpthread $(pkg-config --libs sdl2) -lGLESv2 -lEGL
+clang $OBJ/*.o -o $OUT -Wl,--wrap=f_0045A060 -lm -lpthread $(pkg-config --libs sdl2) -lGLESv2 -lEGL
 echo "built $OUT"

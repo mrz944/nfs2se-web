@@ -121,6 +121,31 @@ static void lap_watch(void) {
     }
 }
 
+/* Partial steering from the page's touch controls (the thumb stick and tilting the phone). Each
+ * input tick the game builds every local player's controls at 0x510800 (0x45a060), 4 bytes
+ * [steer, gas, brake, buttons], from the bindings at 0x5106a0: steer = (right - left) / 2, each
+ * read 0..255, so -127 (full left) .. 127 (full right); the car's steering target follows it
+ * (0x456de0 writes car +0x2e0). Keys only ever give the ends. The link wraps 0x45a060
+ * (--wrap=f_0045A060, build.sh and build-web.sh) so that, after it, player 1's steer byte takes
+ * the page's value while the page steers (anything but 0); a centred stick leaves the keys'.
+ * Online that block is also what goes to the host, so others see the same steering.
+ * RT_TOUCH_STEER=-127..127 sets it natively (testing). */
+#define CONTROLS 0x510800u
+static volatile int32_t touch_steer;
+#ifdef __EMSCRIPTEN__
+EMSCRIPTEN_KEEPALIVE volatile int32_t *rt_web_touch_steer(void) { return &touch_steer; }
+#endif
+void __real_f_0045A060(CPU *c);
+void __wrap_f_0045A060(CPU *c) {
+    __real_f_0045A060(c);
+    static int test = -1000;
+    if (test == -1000) test = getenv("RT_TOUCH_STEER") ? atoi(getenv("RT_TOUCH_STEER")) : 0;
+    int32_t s = test ? test : __atomic_load_n(&touch_steer, __ATOMIC_RELAXED);
+    if (!s) return;
+    if (s > 127) s = 127; else if (s < -127) s = -127;
+    G[CONTROLS] = (uint8_t)(int8_t)s;
+}
+
 void game_frame(void) {
     set_player_name();
     unlock_all();
