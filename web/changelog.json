@@ -3,7 +3,10 @@
   "about": "What changed on nfs2se.xyz, day by day. Kinds: new, improved, fixed. Days run 05:00 to 05:00 Polish time. nfs3-webgl's tools/discord/changelog.mjs posts them to Discord.",
   "days": [
     { "date": "2026-11-15", "items": [
-      ["fixed", "Races on slow computers and Chromebooks no longer slow to a crawl: the game's sound mixing was starving the rest of the game."]
+      ["new", "Phones: steer with a thumb stick or by tilting the phone, gently or hard; new buttons for camera, look behind, horn and gears; touch settings in Game Settings."],
+      ["improved", "Online: a joining player's game no longer stutters when the host's updates arrive late, other cars slide into place instead of jumping, and a dropped connection gets its place in the room back."],
+      ["fixed", "iPhone: touch buttons no longer stick or select text; sound plays with the silent switch on and comes back after a call."],
+      ["fixed","Races on slow computers and Chromebooks no longer slow to a crawl: the game's sound mixing was starving the rest of the game."]
     ] },
     { "date": "2026-11-13", "items": [
       ["improved", "Smoother on slow computers and Chromebooks: drawing a frame takes about a tenth of the browser work it did, leaving more of the CPU to the game."]
