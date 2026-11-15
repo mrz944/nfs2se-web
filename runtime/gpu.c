@@ -44,11 +44,12 @@ static uint32_t frame_seq;
 /* the game's frames stop for 5 s: log what every thread is doing (then every 10 s while it lasts) */
 static void *stall_watch(void *unused) {
     (void)unused;
-    uint32_t seen = 0; int quiet = 0, next = 5, secs = 0;
+    uint32_t seen = 0; int quiet = 0, next = 5, secs = 0, stat_secs = 0;
     const char *at = getenv("RT_WATCH_AT");                  /* debugging: also dump at this second */
     for (;;) {
         nanosleep(&(struct timespec){ 1, 0 }, NULL);
         if (at && ++secs == atoi(at)) rt_watch_dump("requested");
+        if (++stat_secs == 10) { extern void rt_lock_stats(double); rt_lock_stats(10); stat_secs = 0; }
         uint32_t f = __atomic_load_n(&frame_seq, __ATOMIC_RELAXED);
         if (f != seen) { seen = f; quiet = 0; next = 5; continue; }
         if (++quiet == next) { char why[48]; snprintf(why, sizeof why, "no frame for %d s after frame %u", quiet, f); rt_watch_dump(why); next += 10; }

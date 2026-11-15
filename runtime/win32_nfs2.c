@@ -42,7 +42,8 @@ static uint32_t n_GetVolumeInformationA(CPU *c, const uint32_t *a) {
     if (A(4)) WR32(A(4), d == 'd' ? 110 : 255);
     if (A(5)) WR32(A(5), d == 'd' ? 0x00080004u : 0x3u);   /* CD: read-only, Unicode on disk */
     if (A(6) && A(7) > strlen(fs)) strcpy(HSTR(A(6)), fs);
-    rt_log("GetVolumeInformationA(%s) -> %s", HSTR(A(0)) ? HSTR(A(0)) : "(cwd)", label);
+    static int logged[2];   /* the game asks again and again while it loads: log each drive once */
+    if (!logged[d == 'd']++) rt_log("GetVolumeInformationA(%s) -> %s", HSTR(A(0)) ? HSTR(A(0)) : "(cwd)", label);
     return 1;
 }
 

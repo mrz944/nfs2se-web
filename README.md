@@ -173,6 +173,7 @@ much easier to chase than in a browser.
 | `RT_LAP_CAR=k` | report car k's laps instead of the player's (testing lap records with the AI) |
 | `RT_VSYNC=0` | don't pace `grBufferSwap` to 60 Hz |
 | `RT_MULTICORE=1` | run game threads truly in parallel (the movie player may then fail) |
+| `RT_SLOW=k[@s][,ns]` | act like a k times slower computer from second s on, each clock read costing ns more (as in the browser); the log's `lock:` line every 10 s shows how the threads share the CPU |
 | `./re NFS2SEA.EXE dis\|func\|xref\|str …` | disassembler and cross-references for the exe |
 
 ## Status

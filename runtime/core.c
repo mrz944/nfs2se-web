@@ -33,7 +33,8 @@ __thread const char *tls_thunk_name;
 /* watchdog (rt_watch_*): what every guest thread is doing, readable from another thread */
 static __thread volatile uint32_t tls_calls, tls_ret;
 static __thread const char *volatile tls_last;
-typedef struct { uint32_t tid; CPU *const volatile *cpu; const char *const volatile *in; const char *const volatile *last; volatile uint32_t *calls, *ret; uint32_t seen; int used; } Watch;
+static __thread volatile uint64_t tls_held_us;   /* time this thread held the single-core lock */
+typedef struct { uint32_t tid; CPU *const volatile *cpu; const char *const volatile *in; const char *const volatile *last; volatile uint32_t *calls, *ret; uint32_t seen; int used; volatile uint64_t *held; uint64_t held_seen; } Watch;
 /* slots point into each thread's thread-locals: a thread leaves (rt_unwatch_thread) before it
  * exits, and watch_mu keeps it from leaving while a dump reads them */
 static Watch watch[64]; static int nwatch;
@@ -44,7 +45,7 @@ void rt_watch_thread(uint32_t tid) {
     pthread_mutex_lock(&watch_mu);
     int i = 0; while (i < nwatch && watch[i].used) i++;
     if (i < 64) {
-        watch[i] = (Watch){ tid, (CPU *const volatile *)&tls_cpu, (const char *const volatile *)&tls_thunk_name, &tls_last, &tls_calls, &tls_ret, 0, 1 };
+        watch[i] = (Watch){ tid, (CPU *const volatile *)&tls_cpu, (const char *const volatile *)&tls_thunk_name, &tls_last, &tls_calls, &tls_ret, 0, 1, &tls_held_us, tls_held_us };
         if (i == nwatch) nwatch++;
     }
     pthread_mutex_unlock(&watch_mu);
@@ -198,9 +199,35 @@ static __thread volatile int *bgl_prio_ptr;  /* this thread's priority (Thread.p
 void bgl_set_prio_ptr(volatile int *p) { bgl_prio_ptr = p; }
 static int bgl_my_prio(void) { return bgl_prio_ptr ? *bgl_prio_ptr : bgl_prio_default; }
 static volatile long bgl_owner; static const char *volatile bgl_owner_call;
+static uint64_t bgl_granted_at, bgl_wake_us, bgl_wake_n, bgl_wake_max;   /* under bgl_mu */
 #include <unistd.h>
-static uint64_t bgl_now_us(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); return (uint64_t)t.tv_sec * 1000000u + (uint64_t)t.tv_nsec / 1000u; }
-static int bgl_enabled(void) { if (bgl_on < 0) bgl_on = !(getenv("RT_MULTICORE") && atoi(getenv("RT_MULTICORE"))); return bgl_on; }
+/* RT_SLOW=k[@s][,ns] (testing): play a k times slower computer (from second s on): a thread holds
+ * the lock k times as long, and each clock read costs ns more, as a JS call does in the browser */
+static int bgl_slow; static uint64_t bgl_slow_from;
+static unsigned bgl_clock_ns;
+static volatile uint64_t bgl_clock_reads;
+static uint64_t bgl_now_us(void) {
+    struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t);
+    uint64_t r = (uint64_t)t.tv_sec * 1000000u + (uint64_t)t.tv_nsec / 1000u;
+    __atomic_add_fetch(&bgl_clock_reads, 1, __ATOMIC_RELAXED);
+    if (bgl_clock_ns && r >= bgl_slow_from) {
+        uint64_t end = (uint64_t)t.tv_sec * 1000000000u + (uint64_t)t.tv_nsec + bgl_clock_ns; struct timespec u;
+        do clock_gettime(CLOCK_MONOTONIC, &u); while ((uint64_t)u.tv_sec * 1000000000u + (uint64_t)u.tv_nsec < end);
+    }
+    return r;
+}
+static int bgl_enabled(void) {
+    if (bgl_on < 0) {
+        bgl_on = !(getenv("RT_MULTICORE") && atoi(getenv("RT_MULTICORE")));
+        const char *e = getenv("RT_SLOW");
+        if (e) {
+            bgl_slow = atoi(e); bgl_slow_from = bgl_now_us();
+            if (strchr(e, '@')) bgl_slow_from += (uint64_t)(atof(strchr(e, '@') + 1) * 1e6);
+            if (strchr(e, ',')) bgl_clock_ns = (unsigned)atoi(strchr(e, ',') + 1);
+        }
+    }
+    return bgl_on;
+}
 static void bgl_recount(void) {     /* under bgl_mu */
     int top = -1000;
     for (int i = 0; i < BGL_MAXW; i++) if (bgl_w[i].used && bgl_w[i].prio > top) top = bgl_w[i].prio;
@@ -214,7 +241,7 @@ static int bgl_pick(uint64_t now) {
     int64_t best = INT64_MIN; int bi = -1;
     for (int i = 0; i < BGL_MAXW; i++) {
         if (!bgl_w[i].used || i == bgl_grant) continue;
-        int64_t p = now - bgl_w[i].since > 50000 ? 1000 : bgl_w[i].prio;   /* starved: boost */
+        int64_t p = (int64_t)(now - bgl_w[i].since) > 50000 ? 1000 : bgl_w[i].prio;   /* starved: boost (signed: the waiter read its own clock) */
         int64_t key = p * (1ll << 40) - (int64_t)bgl_w[i].seq;
         if (key > best) { best = key; bi = i; }
     }
@@ -233,6 +260,9 @@ void bgl_acquire(void) {
         bgl_nw++; bgl_recount();
         while (bgl_grant != me) pthread_cond_wait(&bgl_cv, &bgl_mu);
         bgl_grant = -1; bgl_w[me].used = 0; bgl_nw--; bgl_recount();
+        int64_t lat = (int64_t)(bgl_now_us() - bgl_granted_at);   /* handed over until running again */
+        if (lat < 0) lat = 0;   /* browser: a worker's clock is its own start time + performance.now(), so threads disagree slightly */
+        bgl_wake_us += (uint64_t)lat; bgl_wake_n++; if ((uint64_t)lat > bgl_wake_max) bgl_wake_max = (uint64_t)lat;
     }
     bgl_grants++; bgl_owner_prio = prio;
     pthread_mutex_unlock(&bgl_mu);
@@ -241,9 +271,15 @@ void bgl_acquire(void) {
 void bgl_release(void) {
     if (!bgl_enabled() || bgl_held > 1) { bgl_held--; return; }
     if (bgl_held <= 0) return;
+    uint64_t now = bgl_now_us();
+    if (bgl_slow > 1 && now >= bgl_slow_from) {   /* RT_SLOW (testing) */
+        uint64_t until = now + (now - bgl_since) * (uint64_t)(bgl_slow - 1);
+        while ((now = bgl_now_us()) < until) {}
+    }
+    tls_held_us += now - bgl_since;
     bgl_held = 0; bgl_owner = 0;
     pthread_mutex_lock(&bgl_mu);
-    if (bgl_nw) { bgl_grant = bgl_pick(bgl_now_us()); pthread_cond_broadcast(&bgl_cv); }   /* stays busy: handed over */
+    if (bgl_nw) { bgl_grant = bgl_pick(now); bgl_granted_at = bgl_now_us(); pthread_cond_broadcast(&bgl_cv); }   /* stays busy: handed over */
     else bgl_busy = 0;
     pthread_mutex_unlock(&bgl_mu);
 }
@@ -256,8 +292,15 @@ int bgl_drop(void) {
 }
 void bgl_restore(int d) { if (d > 0) { bgl_acquire(); bgl_held = d; } }
 /* hand over if a higher-priority thread waits, or after a 4 ms slice if anyone does */
+/* Lifted loops ask this on every back edge while another thread waits for the lock: tens of
+ * millions of times a second. Reading the clock is a JS call in the browser (performance.now()
+ * and a 64-bit store, around a microsecond on a slow laptop), so the 4 ms slice is checked only
+ * on every 512th ask. Reading it every time made the game's sound mixer (which runs while the
+ * game thread waits) many times slower, and on Chromebooks the race stopped almost completely. */
+static __thread unsigned bgl_asks;
 static inline int bgl_should_yield(void) {
     if (bgl_top_wait > bgl_owner_prio) return 1;
+    if (++bgl_asks & 511) return 0;
     return bgl_now_us() - bgl_since >= 4000;
 }
 void bgl_preempt(void) {             /* called from lifted loops while contended */
@@ -280,6 +323,27 @@ void rt_poll_idle(void) {
     if (!bgl_enabled() || bgl_held != 1) return;
     if (g_bgl_contended) { bgl_release(); bgl_acquire(); }
     if (++streak >= 200) { streak = 0; int d = bgl_drop(); usleep(300); bgl_restore(d); }
+}
+/* every 10 s (gpu.c's watchdog): how the single-core lock was shared, per guest thread, and how
+ * long a thread took to run again after the lock was handed to it */
+void rt_lock_stats(double secs) {
+    if (!bgl_enabled()) return;
+    char buf[600]; int o = 0; uint64_t sum = 0;
+    pthread_mutex_lock(&watch_mu);
+    for (int i = 0; i < nwatch && o < (int)sizeof buf - 40; i++) {
+        Watch *w = &watch[i];
+        if (!w->used) continue;
+        uint64_t h = *w->held, d = h - w->held_seen; w->held_seen = h; sum += d;
+        if (d * 200 >= (uint64_t)(secs * 1e6)) o += snprintf(buf + o, sizeof buf - o, " %x:%.0f%%", w->tid, d / (secs * 1e4));
+    }
+    pthread_mutex_unlock(&watch_mu);
+    pthread_mutex_lock(&bgl_mu);
+    uint64_t n = bgl_wake_n, us = bgl_wake_us, mx = bgl_wake_max; bgl_wake_n = bgl_wake_us = bgl_wake_max = 0;
+    pthread_mutex_unlock(&bgl_mu);
+    static uint64_t reads0; uint64_t reads = bgl_clock_reads;
+    rt_log("lock: busy %.0f%%,%s | handoffs %.0f/s, wake %.2f ms avg, %.1f max | clock %.0fk/s",
+           sum / (secs * 1e4), buf, n / secs, n ? us / 1e3 / n : 0.0, mx / 1e3, (reads - reads0) / secs / 1e3);
+    reads0 = reads;
 }
 void bgl_dump(void) { rt_log("single-core lock: %llu grants, %d waiting (top priority %d), owner thread %#lx priority %d (acquired after %s)", (unsigned long long)bgl_grants, bgl_nw, bgl_top_wait, bgl_owner, bgl_owner_prio, bgl_owner_call ? bgl_owner_call : "-"); }
 static int thunk_may_block(const char *n) {
