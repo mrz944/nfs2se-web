@@ -145,6 +145,10 @@ is why clients lagged on 1999-era internet links. Packets are tagged `0xEA` +
   - Analytics events, play and connection logs, room logs and session logs carry the player id.
     `/__stats` has a Players section with a lookup, and `tools/players.mjs` does the same from
     the terminal and fixes what players can't (an earlier name's laps, a lost passphrase).
+- The runtime keeps the game's current folder (`SetCurrentDirectoryA`, `runtime/kernel32.c`).
+  Relative paths in the file calls start there. NFS II SE lists its saved replays (`*.rpy`)
+  and tournaments (`*.tou`) after `SetCurrentDirectoryA(".\FeData\pc\save\")`
+  (`f_00409990`); before, the runtime ignored that, and the lists showed the game's root.
 - Measured natively with `RT_NET_LOSS=10` (drop 10% of incoming packets): the
   game's own protocol already resends a lost packet about one tick later, and
   neither side's send rhythm ever paused for more than 33 ms. The remaining

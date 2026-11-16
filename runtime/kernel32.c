@@ -25,7 +25,14 @@ extern char g_exe_path[1024];
 #define INFINITE 0xFFFFFFFFu
 
 /* ------------------------------------------------------------ paths */
+/* The current directory, as the game sees it (cwd_guest) and below the game dir (cwd_rel,
+ * '/'-separated, "" = the game dir). The game's front end lists saved replays (*.rpy) and
+ * tournaments (*.tou) after SetCurrentDirectoryA into its save folder, then goes back with
+ * SetCurrentDirectoryA(<what GetCurrentDirectoryA gave>). Relative paths in the file calls
+ * (fs_map_cwd) start there; DLLs and INI files (fs_map) always from the game dir, as Windows
+ * looks for those elsewhere anyway. */
 static char cwd_guest[260] = GAME_GUEST_DIR;
+static char cwd_rel[260] = "";
 
 static int ci_find(const char *dir, const char *name, char *out, size_t n) {
     DIR *d = opendir(dir);
@@ -70,6 +77,38 @@ int fs_map(const char *gp, char *out, size_t outsz) {
     return !missing;
 }
 
+/* a guest path for the file calls: a relative one starts at the current directory */
+static int fs_map_cwd(const char *gp, char *out, size_t outsz) {
+    int rel = gp && *gp && !(isalpha((unsigned char)gp[0]) && gp[1] == ':') && gp[0] != '\\' && gp[0] != '/';
+    if (!rel || !cwd_rel[0]) return fs_map(gp, out, outsz);
+    char full[1024]; snprintf(full, sizeof full, "%s/%s", cwd_rel, gp);
+    return fs_map(full, out, outsz);
+}
+/* guest path -> directory below the game dir ('/'-separated, ".." folded); 0 if it leaves it */
+static int rel_dir(const char *gp, char *out, size_t n) {
+    char tmp[1024], acc[1024] = "";
+    const char *s = gp;
+    const char *gdir = GAME_GUEST_DIR + 3;                                  /* "NFS2SE" */
+    size_t gl = strlen(gdir);
+    int abs = 0;
+    if (isalpha((unsigned char)s[0]) && s[1] == ':') { s += 2; abs = 1; }
+    snprintf(tmp, sizeof tmp, "%s", s);
+    for (char *p = tmp; *p; p++) if (*p == '\\') *p = '/';
+    char *t = tmp;
+    if (*t == '/') abs = 1;
+    while (*t == '/') t++;
+    if (abs && !strncasecmp(t, gdir, gl) && (t[gl] == '/' || !t[gl])) t += gl;   /* C:\NFS2SE is the game dir */
+    else if (!abs) snprintf(acc, sizeof acc, "%s", cwd_rel);
+    char *save = NULL;
+    for (char *tok = strtok_r(t, "/", &save); tok; tok = strtok_r(NULL, "/", &save)) {
+        if (!strcmp(tok, ".")) continue;
+        if (!strcmp(tok, "..")) { char *sl = strrchr(acc, '/'); if (sl) *sl = 0; else if (acc[0]) acc[0] = 0; else return 0; continue; }
+        size_t l = strlen(acc); snprintf(acc + l, sizeof acc - l, "%s%s", l ? "/" : "", tok);
+    }
+    snprintf(out, n, "%s", acc);
+    return 1;
+}
+
 /* ------------------------------------------------------------ files */
 static uint32_t set_event(uint32_t h, int sig, int pulse);
 typedef struct { int fd; char path[1024]; } File;
@@ -82,7 +121,7 @@ static int is_nul_device(const char *p) {
 static uint32_t k_CreateFileA(CPU *c, const uint32_t *a) {
     const char *gp = HSTR(A(0)); uint32_t access = A(1), disp = A(4);
     if (!gp || !*gp) { rt_log("CreateFileA(\"\") rejected (empty path)"); tls_lasterr = 3; return INVALID_HANDLE; }
-    char hp[1024]; fs_map(gp, hp, sizeof hp);
+    char hp[1024]; fs_map_cwd(gp, hp, sizeof hp);
     if (is_nul_device(gp)) {   /* Windows' NUL device (any dir, any extension, "nul:"): reads EOF, writes vanish */
         snprintf(hp, sizeof hp, "/dev/null");
         disp = 3;   /* OPEN_EXISTING */
@@ -169,24 +208,24 @@ static uint32_t k_GetOverlappedResult(CPU *c, const uint32_t *a) {
 }
 static uint32_t k_FlushFileBuffers(CPU *c, const uint32_t *a) { (void)c; (void)a; return 1; }
 static uint32_t k_GetFileAttributesA(CPU *c, const uint32_t *a) {
-    char hp[1024]; fs_map(HSTR(A(0)), hp, sizeof hp);
+    char hp[1024]; fs_map_cwd(HSTR(A(0)), hp, sizeof hp);
     struct stat st;
     if (stat(hp, &st)) { tls_lasterr = ERROR_FILE_NOT_FOUND; return INVALID_HANDLE; }
     return S_ISDIR(st.st_mode) ? 0x10 : 0x80;
 }
 static uint32_t k_SetFileAttributesA(CPU *c, const uint32_t *a) { (void)c; (void)a; return 1; }
 static uint32_t k_DeleteFileA(CPU *c, const uint32_t *a) {
-    char hp[1024]; fs_map(HSTR(A(0)), hp, sizeof hp); return unlink(hp) == 0;
+    char hp[1024]; fs_map_cwd(HSTR(A(0)), hp, sizeof hp); return unlink(hp) == 0;
 }
 static uint32_t k_MoveFileA(CPU *c, const uint32_t *a) {
-    char h1[1024], h2[1024]; fs_map(HSTR(A(0)), h1, sizeof h1); fs_map(HSTR(A(1)), h2, sizeof h2);
+    char h1[1024], h2[1024]; fs_map_cwd(HSTR(A(0)), h1, sizeof h1); fs_map_cwd(HSTR(A(1)), h2, sizeof h2);
     return rename(h1, h2) == 0;
 }
 static uint32_t k_CreateDirectoryA(CPU *c, const uint32_t *a) {
-    char hp[1024]; fs_map(HSTR(A(0)), hp, sizeof hp); return mkdir(hp, 0755) == 0;
+    char hp[1024]; fs_map_cwd(HSTR(A(0)), hp, sizeof hp); return mkdir(hp, 0755) == 0;
 }
 static uint32_t k_RemoveDirectoryA(CPU *c, const uint32_t *a) {
-    char hp[1024]; fs_map(HSTR(A(0)), hp, sizeof hp); return rmdir(hp) == 0;
+    char hp[1024]; fs_map_cwd(HSTR(A(0)), hp, sizeof hp); return rmdir(hp) == 0;
 }
 static uint32_t k_GetCurrentDirectoryA(CPU *c, const uint32_t *a) {
     uint32_t n = (uint32_t)strlen(cwd_guest);
@@ -195,7 +234,17 @@ static uint32_t k_GetCurrentDirectoryA(CPU *c, const uint32_t *a) {
     return n;
 }
 static uint32_t k_SetCurrentDirectoryA(CPU *c, const uint32_t *a) {
-    rt_log("SetCurrentDirectoryA(%s)", HSTR(A(0))); return 1;
+    const char *gp = HSTR(A(0));
+    char rel[260], hp[1024]; struct stat st;
+    if (!gp || !rel_dir(gp, rel, sizeof rel) || (fs_map(rel, hp, sizeof hp), stat(hp, &st)) || !S_ISDIR(st.st_mode)) {
+        rt_log("SetCurrentDirectoryA(%s): no such folder", gp ? gp : "");
+        tls_lasterr = 3; return 0;                                  /* ERROR_PATH_NOT_FOUND */
+    }
+    snprintf(cwd_rel, sizeof cwd_rel, "%s", rel);
+    snprintf(cwd_guest, sizeof cwd_guest, "%s%s%s", GAME_GUEST_DIR, rel[0] ? "\\" : "", rel);
+    for (char *p = cwd_guest; *p; p++) if (*p == '/') *p = '\\';
+    rt_log("SetCurrentDirectoryA(%s) -> %s", gp, cwd_guest);
+    return 1;
 }
 static uint32_t k_GetFullPathNameA(CPU *c, const uint32_t *a) {
     const char *p = HSTR(A(0)); char buf[520];
@@ -232,7 +281,7 @@ static int find_next(Find *fd, uint32_t out) {
     return 0;
 }
 static uint32_t k_FindFirstFileA(CPU *c, const uint32_t *a) {
-    char hp[1024]; fs_map(HSTR(A(0)), hp, sizeof hp);
+    char hp[1024]; fs_map_cwd(HSTR(A(0)), hp, sizeof hp);
     Find *f = calloc(1, sizeof *f);
     char *sl = strrchr(hp, '/');
     *sl = 0; snprintf(f->dir, sizeof f->dir, "%s", hp); snprintf(f->pat, sizeof f->pat, "%s", sl + 1);

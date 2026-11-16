@@ -111,6 +111,17 @@ async function gameDir(create = false) {
   const root = await navigator.storage.getDirectory();
   return root.getDirectoryHandle(GAME_DIR, { create });
 }
+// FEDATA/PC/SAVE, where the game keeps saved replays and tournaments, found whatever the case of
+// its folders (the download keeps the original names); made when missing
+async function saveDir() {
+  let d = await gameDir();
+  for (const want of ['FEDATA', 'PC', 'SAVE']) {
+    let found = null;
+    for await (const [n, h] of d.entries()) if (h.kind === 'directory' && n.toLowerCase() === want.toLowerCase()) { found = h; break; }
+    d = found || await d.getDirectoryHandle(want, { create: true });
+  }
+  return d;
+}
 async function hasGame() {
   try { const d = await gameDir(); await d.getFileHandle('.download-complete'); return true; } catch { return false; }
 }
@@ -971,6 +982,9 @@ async function start() {
   await modsSettled();                                               // mods switched on just now: let them finish copying
   try { modsOn = (await moddedPaths(await gameDir())).size > 0; } catch { modsOn = false; }
   // NFS II SE has no ini to patch; the player name is typed in the game (Player One)
+  // the game saves replays and tournaments in FEDATA/PC/SAVE (Options > Load/Save); make sure
+  // it is there (a download from before had it only because of its TEMP.TXT)
+  try { await saveDir(); } catch {}
   const startT = performance.now();
   const dev = await deviceInfo();
   log('device:', Object.entries(dev).map(([k, v]) => `${k}=${v}`).join(' '));
