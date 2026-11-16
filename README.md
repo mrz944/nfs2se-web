@@ -188,6 +188,8 @@ much easier to chase than in a browser.
 - ✅ Bonus cars (Bomber BFS, Tombstone, FZR 2000) and the Monolithic Studios track unlocked (Game Settings)
 - ✅ Lap records on the start page: each racer's best lap per track and direction (the runtime reads
   the lap times off the game, `runtime/game.c`; the server keeps them, `web/laps.mjs`)
+- ✅ Players without accounts: a name belongs to one player, kept with 8 passphrase words that work on
+  any device (`web/players.mjs`, `web/words.js`); `tools/players.mjs` looks players up and fixes names
 - ✅ Instant steering (Game Settings): the wheels reach full lock at once, as with a joystick
 - ✅ Phones and tablets: on-screen touch controls; iPhones on iOS 18 can save the game files (OPFS
   worker), with an Add to Home Screen hint for fullscreen
