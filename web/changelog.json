@@ -6,7 +6,8 @@
       ["new", "Your name is yours: change it whenever you like and your lap records go with it. The Lap Records and Most Active Racers show each racer once, with their best. Records from before stay with the name they were driven under, and go to whoever comes back with that name saved."],
       ["new", "Race as yourself on another device: Use on another device, under Your name, shows 8 words. Enter them on your phone or another computer to race there with your name and lap records. No account, no e-mail."],
       ["new", "Lap Records: ▶ replay on a best lap is the game's own replay of the race it was driven in. Click it and it's in your game under Options › Load/Save › View Replay. Nothing to do for your own: after each race, the replay goes with your laps by itself."],
-      ["fixed", "Replays and tournaments you save in the game now show up under Options › Load/Save. Before, the lists never found them."]
+      ["fixed", "Replays and tournaments you save in the game now show up under Options › Load/Save. Before, the lists never found them."],
+      ["fixed", "Lap Records: if you drive your best time twice, the board now shows the lap that has a replay. Before, it could keep the earlier lap and hide the ▶ replay."]
     ] },
     { "date": "2026-11-15", "items": [
       ["new", "Phones: steer with a thumb stick or by tilting the phone, gently or hard; new buttons for camera, look behind, horn and gears; touch settings in Game Settings."],
