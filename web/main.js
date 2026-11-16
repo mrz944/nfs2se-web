@@ -8,6 +8,7 @@
 import { setupMods, moddedPaths, forgetMods, modsSettled } from './mods.js';
 import { openWritable, writeFile } from './opfs.js';
 import { WORDS } from './words.js';
+import { raceTracker, watchReplay } from './replay-watch.js';
 
 const $ = (id) => document.getElementById(id);
 const status = (msg, err = false) => { $('status').textContent = msg; $('status').className = err ? 'err' : ''; };
@@ -1016,6 +1017,8 @@ async function start() {
   mark('wasm');
   if (net.id) { mod.ccall('rt_net_set_node', null, ['string'], [net.id]); net.attach(mod); net.setState('game'); showNetBadge(); }
   startPerfLog(mod);
+  // replays of races with laps on the lap records go there too (replay-watch.js)
+  gameDir().then((dir) => watchReplay({ dir, race: () => races.current, key: () => me.k, skip: () => modsOn, log })).catch(() => {});
   // keep the log over the game until frames arrive (always with ?log)
   const keepLog = logWanted();
   $('log').classList.add('overlay'); document.body.appendChild($('log'));
@@ -1386,6 +1389,7 @@ function setupOnline() {
 // code, the lap, the race's laps and the time in the game's 1/64 s ticks. They go to /__lap
 // (laps.mjs), unless mods are on; the start page shows the boards from /__laps.
 const TRACKS = { 0: 'Proving Grounds', 2: 'Outback', 3: 'Last Resort', 4: 'North Country', 5: 'Pacific Spirit', 6: 'Mediterraneo', 7: 'Mystic Peaks', 8: 'Monolithic Studios' };
+const TRACK_CODE = { 0: 'PG', 2: 'OB', 3: 'LR', 4: 'NC', 5: 'PS', 6: 'ME', 7: 'MP', 8: 'MS' };   // in saved replay names
 const CARS = {
   mcf1: 'McLaren F1', ff50: 'Ferrari F50', f355: 'Ferrari 355 F1', gt90: 'Ford GT90', idgo: 'Ford Indigo', mach: 'Mustang Mach III',
   jagr: 'Jaguar XJ220', lgt1: 'Lotus GT1', espr: 'Lotus Esprit V8', nazc: 'Italdesign Nazca C2', cala: 'Italdesign Cala', isde: 'Isdera 112i',
@@ -1396,19 +1400,22 @@ const trackName = (t) => TRACKS[t] || `Track ${t}`;
 const carName = (c) => CARS[c] || String(c).toUpperCase();
 const lapTime = (t) => `${Math.floor(t / 3840)}:${String(Math.floor(t / 64) % 60).padStart(2, '0')}.${String(Math.floor((t % 64) * 100 / 64)).padStart(2, '0')}`;
 let modsOn = false;
+let gameHere = false;          // the game files are in this browser (refresh() in init)
+const races = raceTracker();      // each lap's race, for its replay (replay-watch.js)
 function reportLap(track, flags, code, lap, laps, ticks) {
   const car = String.fromCharCode(code & 255, (code >>> 8) & 255, (code >>> 16) & 255, code >>> 24).replace(/\0[^]*$/, '').toLowerCase();
   log(`lap ${lap}/${laps}: ${lapTime(ticks)} on ${trackName(track)}${flags & 1 ? ' backward' : ''} in the ${carName(car)}${modsOn ? ' (mods on: not sent to the lap records)' : ''}`);
   if (modsOn) return;
   const n = cleanName($('pname')?.value).trim();
   if (!n) return;
+  const race = races.forLap(track, flags, lap, laps);
   // with the player key: the lap is the player's, under its name on the server (players.mjs)
   fetch('__lap', { method: 'POST', headers: { 'Content-Type': 'application/json' }, keepalive: true,
-    body: JSON.stringify({ n, k: me.k || undefined, s: logSession, track, f: flags & 31, car, lap, laps, ticks, b: buildInfo?.built || '' }) })
+    body: JSON.stringify({ n, k: me.k || undefined, s: logSession, race: race.id, track, f: flags & 31, car, lap, laps, ticks, b: buildInfo?.built || '' }) })
     .then(async (r) => {
       const d = await r.json().catch(() => null);
       if (!r.ok) { log(`lap records: not sent (${d?.error === 'taken' ? `${n} is another player's name` : d?.error || r.status})`); return; }
-      if (d?.p) playerIs(d);
+      if (d?.p) { playerIs(d); race.sent++; }
       if (d?.best) log('lap records: a new best lap for', d?.n || n);
     }).catch(() => {});
 }
@@ -1435,10 +1442,29 @@ function setupLaps() {
     $('laps-list').replaceChildren(...(rows.length ? rows.map((r, i) => el('li', { className: mine(r) ? 'me' : '' },
       el('span', { className: 'r', textContent: i + 1 }), el('span', { className: 'n', textContent: r.n }),
       el('span', { className: 'tm', textContent: lapTime(r.ticks) }),
-      el('span', { className: 'c', textContent: carName(r.car), title: age(r.t) }, ...LAP_TAGS.filter(([b]) => r.f & b).map(([, t, title]) => el('span', { className: 'ltag', textContent: t, title })))))
+      el('span', { className: 'c', textContent: carName(r.car), title: age(r.t) }, ...LAP_TAGS.filter(([b]) => r.f & b).map(([, t, title]) => el('span', { className: 'ltag', textContent: t, title })),
+        ...(r.rp ? [el('a', { className: 'rpl', href: `__replay/${r.rp}.rpy`, textContent: '▶ replay', title: `The game's replay of ${r.n}'s race: this was lap ${r.lap} of ${r.laps}`, onclick: (e) => takeReplay(e, r) })] : []))))
       : [el('li', { className: 'muted', textContent: `No laps on ${trackName(Number(sel.value))} ${dir === 'b' ? 'backwards' : 'forwards'} yet. Finish one and it shows here.` })]));
     const names = new Set(); for (const b of Object.values(data?.boards || {})) for (const r of b) names.add(r.p || 'n:' + r.n.toLowerCase());
     $('laps-count').textContent = names.size ? `${names.size} racer${names.size === 1 ? '' : 's'}` : 'no laps yet';
+  }
+  // a replay into the game (FEDATA/PC/SAVE, where Options > Load/Save > View Replay looks), or a
+  // download when the game isn't in this browser yet. The game lists 8-character names: up to 5
+  // of the racer's, the track's 2 letters, and R when backwards.
+  async function takeReplay(e, r) {
+    if (!gameHere) return;                                          // no game in this browser: the link downloads it
+    e.preventDefault();
+    const note = $('laps-note');
+    const name = `${(r.n.replace(/[^A-Za-z0-9]/g, '') || 'Racer').slice(0, 5)}${TRACK_CODE[Number(sel.value)] || 'TR'}${dir === 'b' ? 'R' : ''}`.toUpperCase();
+    try {
+      const res = await fetch(`__replay/${r.rp}.rpy`);
+      if (!res.ok) throw new Error(res.status);
+      await writeFile(await saveDir(), name + '.rpy', await res.arrayBuffer());
+      note.replaceChildren(`${r.n}'s race is in your game as ${name}: Start Game, then Options › Load/Save › View Replay. Their best lap was lap ${r.lap} of ${r.laps}. `,
+        el('a', { href: `__replay/${r.rp}.rpy`, download: name + '.rpy', textContent: 'Download the file' }), ' for the PC game (its FEDATA\\PC\\SAVE folder).');
+      log(`replay: race ${r.rp} saved to the game as FEDATA/PC/SAVE/${name}.rpy`);
+    } catch (err) { note.textContent = `The replay couldn't be loaded (${err.message}). Try again in a moment.`; }
+    note.hidden = false;
   }
   sel.onchange = () => { want = sel.value; try { localStorage.setItem('nfs2se.lapsTrack', want); } catch {} draw(); };
   $('laps-dir').onclick = (e) => {
@@ -1724,6 +1750,7 @@ async function init() {
   const modsUi = setupMods({ gameRoot: () => gameDir(), log, hasGame }).catch((e) => log('mods:', e.message));
   const refresh = async () => {
     const ok = await hasGame();
+    gameHere = ok;
     $('pick-label').hidden = ok; $('start').hidden = !ok; $('forget').hidden = !ok;
     (await modsUi)?.refresh();
     status(ok ? 'Game files are stored in this browser. Ready.' : 'Choose your NFS II SE folder (the one with NFS2SEA.EXE, FEDATA and GAMEDATA).');

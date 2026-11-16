@@ -145,6 +145,18 @@ is why clients lagged on 1999-era internet links. Packets are tagged `0xEA` +
   - Analytics events, play and connection logs, room logs and session logs carry the player id.
     `/__stats` has a Players section with a lookup, and `tools/players.mjs` does the same from
     the terminal and fixes what players can't (an earlier name's laps, a lost passphrase).
+- `web/replays.mjs`, `web/replay-watch.js`: the game's replay of the race each best lap was
+  driven in.
+  - At the end of every race, finished or quit, NFS II SE writes `replay.rpy` in its folder
+    (`f_0046E970`): always 0x1e5b4 bytes, a copy of the race config (0x5b0 bytes from
+    0x50ffc8: laps at +4, track +0x24, backwards +0x30, mirrored +0x34), then the recording.
+  - The page sends each lap with its race's id. When the file changes after a race with laps on
+    the boards, it uploads it.
+  - The server takes it only when that race's laps are this player's and the file's track,
+    direction, mirror and laps match. It keeps it gzipped, and drops replays no board needs
+    after an hour.
+  - The boards link it (▶ replay), and the start page puts it into the game as a saved replay
+    in `FEDATA/PC/SAVE`, under an 8-character name (Options › Load/Save › View Replay).
 - The runtime keeps the game's current folder (`SetCurrentDirectoryA`, `runtime/kernel32.c`).
   Relative paths in the file calls start there. NFS II SE lists its saved replays (`*.rpy`)
   and tournaments (`*.tou`) after `SetCurrentDirectoryA(".\FeData\pc\save\")`

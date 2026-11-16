@@ -190,6 +190,8 @@ much easier to chase than in a browser.
   the lap times off the game, `runtime/game.c`; the server keeps them, `web/laps.mjs`)
 - ✅ Players without accounts: a name belongs to one player, kept with 8 passphrase words that work on
   any device (`web/players.mjs`, `web/words.js`); `tools/players.mjs` looks players up and fixes names
+- ✅ Lap-record replays: the game's `replay.rpy` of each best lap's race, uploaded by the page and
+  put into the game's save folder on request (`web/replays.mjs`, `web/replay-watch.js`)
 - ✅ Instant steering (Game Settings): the wheels reach full lock at once, as with a joystick
 - ✅ Phones and tablets: on-screen touch controls; iPhones on iOS 18 can save the game files (OPFS
   worker), with an Add to Home Screen hint for fullscreen
