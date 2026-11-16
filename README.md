@@ -32,8 +32,11 @@ DirectX, the Voodoo card and the CD drive are replaced by a small runtime writte
 - 🎮 **Voodoo on your GPU.** The game's 3dfx Glide 2 path is redrawn with WebGL 2 and scaled up sharply.
 - 💿 **No CD, no install.** The runtime plays the part of the Special Edition disc; the game files
   download once into the browser's private storage, from Cloudflare R2.
-- 🌐 **Online rooms.** The lobby, rooms, invite links and the virtual IPX LAN from NFS3 Web are in
-  place for the game's network mode (see *Status*).
+- 🌐 **Online rooms.** The lobby, rooms, invite links and the virtual IPX LAN from NFS3 Web, with
+  direct browser-to-browser links (WebRTC), through TURN or this server when they can't connect.
+- 🏁 **Lap records with replays.** Every racer's best lap per track, under a name that's theirs
+  (a passphrase, no account), with the game's own replay of that race.
+- 📱 **Phones and tablets.** Touch buttons, a thumb stick or tilt steering.
 
 This is the third game on the same runtime, after [NFS3 Web](https://github.com/mrz944/nfs3-web)
 and [NFS4 Web](https://github.com/mrz944/nfs4-web).
@@ -46,6 +49,19 @@ and [NFS4 Web](https://github.com/mrz944/nfs4-web).
 | **Cars, tracks and AI.** The original game data and opponent logic, the Special Edition cars and tracks included. | **Glide 2 on WebGL 2.** The Voodoo 1 API the game loads at run time (`glide2x.dll`): its fixed vertex layout, snapped coordinates and reversed texture codes, recorded per frame and replayed on the GPU. |
 | **Music and sound.** The original soundtrack and effects through the game's own sound engine (`EACSND.DLL`). | **A virtual CD.** Drive `D:` is a CD-ROM labelled like the original disc, so the game finds its movies, music and tracks without one. |
 | **Menus and modes.** Single Race, Tournament, Knockout, Showcase, as you remember them. | **Browser comfort.** One-time download into OPFS (resumable, from R2), AudioWorklet sound, mouse capture, frame pacing, page logs. |
+
+**Lap records, names and replays.** The start page keeps every racer's best lap on each track, in
+both directions, tagged for mirrored and instant steering (laps driven with mods on don't count).
+Each browser gets a player key, 8 words that are never shown unless you ask: the server stores only
+a hash of them. The key owns your name, so you can change it and your laps go with it, and the same
+8 words on another device make you the same racer there (*Your name › Use on another device*).
+After every race that isn't online, the game's own replay of it (`replay.rpy`) goes up with the
+laps, and **▶ replay** on a best lap puts that replay into your game under *Options › Load/Save ›
+View Replay*.
+
+**Phones and tablets.** On-screen buttons, a thumb stick or tilting the phone like a wheel. The
+stick and tilt steer gently or hard, like a joystick, and a finger on the picture works as the
+mouse. `?touch=1` shows the controls anywhere, `?touch=0` hides them.
 
 **Runtime fixes for this game.** A few things NFS II SE expects from Windows and the Voodoo had to
 be reproduced before it ran correctly:
@@ -68,6 +84,8 @@ be reproduced before it ran correctly:
   with two fog tables; both are now honoured, so night tracks are no longer too dark and murky;
 - **threads that end give their memory back:** the game starts threads again and again (movies,
   races); each kept its stacks, which would run the browser build's fixed memory out in a long session;
+- **the current folder:** `SetCurrentDirectoryA` really changes it, and relative paths start
+  there; without it the saved replays and tournaments never appeared under *Load/Save*;
 - **free disk space** that fits the game's 32-bit arithmetic (a 4 GB answer wrapped to "less than 1 MB");
 - **the CD and DirectX checks:** drive types, the volume label, and `DSETUP.DLL`'s version query;
 - **an empty mouse poll yields:** the front end spins on the mouse while a loader thread works; the
@@ -148,6 +166,24 @@ node web/serve.mjs 8092 --game game      # http://localhost:8092/
 Open the page, wait for the game files to download (about 466 MB, once), then click **Start Game**.
 Keyboard controls are the original ones. Click the picture to capture the mouse; Esc releases it.
 
+The server keeps its data in `build/` (`--data DIR` for another folder, say for a test server),
+on your machine only:
+
+| Folder | What's in it |
+|---|---|
+| `clientlogs/` | page logs per session, room logs |
+| `analytics/` | cookie-free analytics, summary at `/__stats` |
+| `laps/` · `replays/` | lap records · their replays (gzipped) |
+| `players/` | players (hashed keys, names) and which sessions were whose |
+| `push/` | Web Push keys and subscriptions |
+| `cloudflare/turn.json` | the optional TURN key (`node tools/turn-check.mjs` tests it) |
+
+`/__stats` asks for a password (any user name): `NFS2SE_STATS_PASSWORD`, or the one the server
+writes to `build/stats-password` on first start. Its Players section looks up one player;
+`node tools/players.mjs` does the same from the terminal and fixes names and laps by hand
+(`who`, `list`, `give`, `rename`, `forget`). `?icetest` on the page logs what each STUN and TURN
+server gives that browser, for players whose links never come up.
+
 > **Public hosting.** [nfs2se.xyz](https://nfs2se.xyz/) runs through a Cloudflare Tunnel to the
 > local server ([docs/cloudflare.md](docs/cloudflare.md)), and the game files come from Cloudflare R2
 > as a resumable gzip pack made by `tools/pack-game.mjs` ([docs/r2.md](docs/r2.md)).
@@ -183,7 +219,8 @@ much easier to chase than in a browser.
 - ✅ Intro movies, menus and dialogs, single races with keyboard and mouse, Glide 2 rendering, sound
 - ✅ Browser build: automatic download from R2, start, menus and a race, tested in Chromium
 - ✅ Online: lobby, virtual IPX LAN, two-player races natively and between two browsers, with NFS3's
-  smoother play ported (each player's own car reacts like the host's; see [docs/online.md](docs/online.md))
+  smoother play ported (each player's own car reacts like the host's; see [docs/online.md](docs/online.md)),
+  TURN relays and the steady beat (a late update no longer freezes a client's race)
 - ✅ Your lobby name is your name in the game (filled in at CONNECT)
 - ✅ Bonus cars (Bomber BFS, Tombstone, FZR 2000) and the Monolithic Studios track unlocked (Game Settings)
 - ✅ Lap records on the start page: each racer's best lap per track and direction (the runtime reads
