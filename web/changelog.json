@@ -2,6 +2,12 @@
   "game": "NFS II SE",
   "about": "What changed on nfs2se.xyz, day by day. Kinds: new, improved, fixed. Days run 05:00 to 05:00 Polish time. nfs3-webgl's tools/discord/changelog.mjs posts them to Discord.",
   "days": [
+    { "date": "2026-11-16", "items": [
+      ["new", "Your name is yours: change it whenever you like and your lap records go with it. The Lap Records and Most Active Racers show each racer once, with their best. Records from before stay with the name they were driven under, and go to whoever comes back with that name saved."],
+      ["new", "Race as yourself on another device: Use on another device, under Your name, shows 8 words. Enter them on your phone or another computer to race there with your name and lap records. No account, no e-mail."],
+      ["new", "Lap Records: ▶ replay on a best lap is the game's own replay of the race it was driven in. Click it and it's in your game under Options › Load/Save › View Replay. Nothing to do for your own: after each race, the replay goes with your laps by itself."],
+      ["fixed", "Replays and tournaments you save in the game now show up under Options › Load/Save. Before, the lists never found them."]
+    ] },
     { "date": "2026-11-15", "items": [
       ["new", "Phones: steer with a thumb stick or by tilting the phone, gently or hard; new buttons for camera, look behind, horn and gears; touch settings in Game Settings."],
       ["improved", "Online: a joining player's game no longer stutters when the host's updates arrive late, other cars slide into place instead of jumping, and a dropped connection gets its place in the room back."],
