@@ -13,14 +13,21 @@
 // still open) is taken only for a name no player has.
 // Replays (replays.mjs): each lap carries its race's id (race, made by the page); when the
 // game's replay of that race comes in, the boards link it on that race's laps (rp, lap, laps).
-// Laps driven with mods on never get here (the page doesn't send them). The page sends them,
-// so a determined cheat can post anything: the checks below only keep out nonsense.
+// Two kinds of boards: the standard ones, and "catch-up & mods" (key "track:dir:x") for laps
+// driven with catch-up on (split screen and network races, Game Setup; the runtime flags them,
+// runtime/game.c) or with mods (the page flags them). Those are labelled on the board. Pages from
+// before the catch-up flag (no v) send online laps as plain ones: a lap from a racer who is in a
+// race in a room right now (racing(), serve.mjs) counts as catch-up then; every online race had
+// it until then. Laps from before it were sorted out by tools/catchup-laps.mjs. The page sends
+// the laps, so a determined cheat can post anything: the checks below only keep out nonsense.
 import { appendFileSync, mkdirSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { badName, cleanName, clientIp, foreignOrigin } from './relay.mjs';
 import { foldName, TOKEN } from './players.mjs';
 
-export const FLAG = { backward: 1, mirrored: 2, instant: 16 };   // NFS II SE has no night or weather (4, 8 in NFS3 Web)
+export const FLAG = { backward: 1, mirrored: 2, instant: 16, catchUp: 32, mods: 64 };   // NFS II SE has no night or weather (4, 8 in NFS3 Web)
+const APART = FLAG.catchUp | FLAG.mods;   // laps on the catch-up & mods boards
+const boardKey = (r) => `${r.track}:${r.f & FLAG.backward ? 'b' : 'f'}${r.f & APART ? ':x' : ''}`;
 const TOP = 20;
 const MIN_TICKS = 64 * 20, MAX_TICKS = 64 * 60 * 20;   // 20 s .. 20 min a lap
 
@@ -29,7 +36,8 @@ export function createLaps(dir, players) {
   const laps = [];                    // every lap, oldest first
   const legacy = new Map();           // folded name -> laps from before player keys under it
   const races = new Map();            // race id -> its laps
-  const api = { hasReplay: () => false };   // replays.mjs: is there a replay of this race?
+  const api = { hasReplay: () => false,      // replays.mjs: is there a replay of this race?
+    racing: () => false };                  // serve.mjs: is a racer with this name in a race in a room?
   let cache = null, cacheFor = '', json = null;
 
   function keep(r) {
@@ -53,14 +61,14 @@ export function createLaps(dir, players) {
     return lo === undefined ? 'n:' + f : lo;
   }
   const hasRp = (r) => !!r.race && api.hasReplay(r.race);
-  // "track:f|b" -> Map(owner -> best lap)
+  // "track:f|b[:x]" -> Map(owner -> best lap)
   function boards() {
     const stamp = `${laps.length}:${players.version}`;
     if (cache && cacheFor === stamp) return cache;
     const b = new Map();
     for (const r of laps) {
       const o = owner(r); if (!o) continue;
-      const key = `${r.track}:${r.f & FLAG.backward ? 'b' : 'f'}`;
+      const key = boardKey(r);
       if (!b.has(key)) b.set(key, new Map());
       const m = b.get(key), had = m.get(o);
       // the same time again: the lap with a replay
@@ -94,7 +102,7 @@ export function createLaps(dir, players) {
       let m; try { m = JSON.parse(body); } catch { res.writeHead(400).end(); return; }
       const int = (v, lo, hi) => Number.isInteger(v) && v >= lo && v <= hi;
       let n = cleanName(m?.n);
-      if (!n || badName(n) || !int(m.track, 0, 63) || !int(m.f, 0, 31) || !int(m.lap, 1, 8) || !int(m.laps, 1, 99) || m.lap > m.laps
+      if (!n || badName(n) || !int(m.track, 0, 63) || !int(m.f, 0, 127) || !int(m.lap, 1, 8) || !int(m.laps, 1, 99) || m.lap > m.laps
           || !int(m.ticks, MIN_TICKS, MAX_TICKS) || typeof m.car !== 'string' || !/^[a-z0-9]{1,4}$/.test(m.car)) { res.writeHead(400).end(); return; }
       const send = (code, o) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(o)); };
       let p = null;
@@ -104,9 +112,10 @@ export function createLaps(dir, players) {
         p = u.pl.p; n = u.pl.n;
         players.session(u.pl, m.s);
       } else if (players.nameState(n).state === 'taken') { send(409, { error: 'taken' }); return; }
+      if (!m.v && api.racing(n)) m.f |= FLAG.catchUp;      // an older page, in an online race
       const race = typeof m.race === 'string' && /^[a-z0-9]{8,16}$/.test(m.race) ? m.race : null;
       const r = { t: Date.now(), n, ...(p ? { p } : {}), ...(race ? { race } : {}), track: m.track, f: m.f, car: m.car, ticks: m.ticks, lap: m.lap, laps: m.laps, b: String(m.b || '').slice(0, 24) };
-      const o = owner(r), had = o && boards().get(`${r.track}:${r.f & FLAG.backward ? 'b' : 'f'}`)?.get(o);
+      const o = owner(r), had = o && boards().get(boardKey(r))?.get(o);
       try { appendFileSync(join(dir, `laps-${new Date().toISOString().slice(0, 7)}.jsonl`), JSON.stringify(r) + '\n'); } catch (e) { console.log('[laps] write failed:', e.message); }
       keep(r);
       send(200, { best: !had || r.ticks < had.r.ticks, ...(p ? { p, n } : {}) });

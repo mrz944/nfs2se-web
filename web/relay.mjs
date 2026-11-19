@@ -425,6 +425,14 @@ export function roomStats() {
 
 // for the start page (/__live): who is around right now. Names only from listed rooms;
 // players in unlisted rooms are counted but not named.
+// laps.mjs: is someone of this name in a race in a room now? (a lap from an older page that
+// doesn't say whether it had catch-up)
+export function racingNamed(n) {
+  const l = String(n).toLowerCase();
+  for (const r of rooms.values()) for (const c of r.members.values()) if (c.state === 'game' && String(c.name).toLowerCase() === l) return true;
+  return false;
+}
+
 export function liveSummary() {
   let racing = 0, lobby = 0;
   const names = [];

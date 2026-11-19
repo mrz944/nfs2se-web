@@ -17,7 +17,7 @@ import { execFileSync, spawn } from 'node:child_process';
 import { appendFileSync, createReadStream, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { clientIp, foreignOrigin, handleUpgrade, listenRaw, liveSummary, onRoomCreated, roomStats, setPlayers, setPlayLog } from './relay.mjs';
+import { clientIp, foreignOrigin, handleUpgrade, listenRaw, liveSummary, onRoomCreated, racingNamed, roomStats, setPlayers, setPlayLog } from './relay.mjs';
 import { createPush, dailyRace } from './push.mjs';
 import { createAnalytics } from './analytics.mjs';
 import { createLaps } from './laps.mjs';
@@ -160,6 +160,7 @@ setPlayLog(playDir);
 
 // lap records (laps.mjs): POST /__lap from the game page, GET /__laps for the start page
 const laps = createLaps(join(data, 'laps'), players);
+laps.racing = racingNamed;
 // replays of the races the best laps were driven in (replays.mjs): POST /__replay, GET /__replay/<race>.rpy
 const replays = createReplays(join(data, 'replays'), { players, laps });
 const playersStats = playersSection({ players, laps, playDir, logDir, sessionsDir: join(data, 'players') });

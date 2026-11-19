@@ -372,6 +372,7 @@
   #top-list { list-style: none; margin: 4px 0 0; padding: 0; font-size: 12px; }
   #top-list li { display: grid; grid-template-columns: 1.8em 1fr auto; gap: 6px; padding: 2px 4px; border-top: 2px solid #2a1304; }
   #top-list .r { color: var(--muted); text-align: right; font-family: var(--px); } #top-list li:nth-child(1) .r { color: var(--gold); } #top-list .f { color: var(--ok); }
+  .lapkind { margin-bottom: 8px; }
   .lapbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
   #laps-track { flex: 1 1 160px; min-width: 0; background: #0a0400; color: var(--text); border: 0; border-radius: 0; padding: 5px 7px; font: 13px var(--ui); box-shadow: inset 2px 2px 0 #000, inset -2px -2px 0 var(--hi); }
   #laps-list { list-style: none; margin: 8px 0 0; padding: 0; font-size: 12px; }
@@ -554,14 +555,15 @@
       <section class="panel" id="laps">
         <div class="ph"><h2>Lap Records</h2><span id="laps-count" class="pill">…</span></div>
         <div class="pb">
+          <div id="laps-kind" class="tabs lapkind"><button data-k="" class="on">Standard</button><button data-k=":x" title="Laps driven with catch-up or mods on">Catch-up &amp; mods</button></div>
           <div class="lapbar">
             <select id="laps-track" aria-label="Track"></select>
             <div id="laps-dir" class="tabs"><button data-d="f" class="on">Forwards</button><button data-d="b">Backwards</button></div>
           </div>
           <ol id="laps-list"></ol>
           <p id="laps-note" hidden></p>
-          <p class="muted lapnote">Each racer's best lap on the track, from any race you finish a lap in: single race, tournament, knockout or online. The first lap counts from the standing start. Laps driven with mods on don't count. <b>▶ replay</b>: the game's replay of the race the lap was in, to watch in your game.
-            Tags: <span class="ltag">IS</span> instant steering, <span class="ltag">MIR</span> mirrored.</p>
+          <p class="muted lapnote">Each racer's best lap on the track, from any race you finish a lap in: single race, tournament, knockout or online. The first lap counts from the standing start. Laps driven with catch-up on (Game Setup, split screen and online: cars that fall behind go faster) or with mods have their own boards, under <b>Catch-up &amp; mods</b>. <b>▶ replay</b>: the game's replay of the race the lap was in, to watch in your game.
+            Tags: <span class="ltag">IS</span> instant steering, <span class="ltag">MIR</span> mirrored, <span class="ltag">CU</span> catch-up, <span class="ltag">MOD</span> mods.</p>
         </div>
       </section>
 

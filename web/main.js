@@ -992,6 +992,7 @@ async function start() {
   if (dev.software) log('WARNING: the browser renders without the GPU (hardware acceleration is off or blocked); expect low frame rates');
   track('start', { online: !!net.id, gpu: String(dev.gpu || ''), dpr: dev.dpr, cores: dev.cores, software: !!dev.software });
   if (net.id) track('online_start', { players: net.peers.size + 1 });
+  onlineGame = !!net.id;
   if (net.id) log(`online: room ${net.room} "${net.info?.name}", ${net.peers.size + 1} player(s), node ${net.id}`);
   log('loading dist/nfs2se.js');
   const { default: NFS2SE } = await import('./dist/nfs2se.js');
@@ -1385,9 +1386,10 @@ function setupOnline() {
 
 // ---------------------------------------------------------------- lap records
 // The runtime reports each lap the player finishes (Module.onLap, runtime/game.c): the track
-// number (the game's TRxx file), flags (FLAG in laps.mjs: backward, mirrored), the car's model
-// code, the lap, the race's laps and the time in the game's 1/64 s ticks. They go to /__lap
-// (laps.mjs), unless mods are on; the start page shows the boards from /__laps.
+// number (the game's TRxx file), flags (FLAG in laps.mjs: backward, mirrored, instant steering,
+// catch-up), the car's model code, the lap, the race's laps and the time in the game's 1/64 s
+// ticks. They go to /__lap (laps.mjs); the start page shows the boards from /__laps. Laps with
+// catch-up or mods (flagged here) have their own boards.
 const TRACKS = { 0: 'Proving Grounds', 2: 'Outback', 3: 'Last Resort', 4: 'North Country', 5: 'Pacific Spirit', 6: 'Mediterraneo', 7: 'Mystic Peaks', 8: 'Monolithic Studios' };
 const TRACK_CODE = { 0: 'PG', 2: 'OB', 3: 'LR', 4: 'NC', 5: 'PS', 6: 'ME', 7: 'MP', 8: 'MS' };   // in saved replay names
 const CARS = {
@@ -1395,23 +1397,28 @@ const CARS = {
   jagr: 'Jaguar XJ220', lgt1: 'Lotus GT1', espr: 'Lotus Esprit V8', nazc: 'Italdesign Nazca C2', cala: 'Italdesign Cala', isde: 'Isdera 112i',
   chev: 'Bomber BFS', dayt: 'Tombstone', futr: 'FZR 2000',
 };
-const LAP_TAGS = [[16, 'IS', 'instant steering'], [2, 'MIR', 'mirrored']];
+const LAP_TAGS = [[16, 'IS', 'instant steering'], [2, 'MIR', 'mirrored'], [32, 'CU', 'catch-up on: cars that fall behind go faster'], [64, 'MOD', 'driven with mods']];
 const trackName = (t) => TRACKS[t] || `Track ${t}`;
 const carName = (c) => CARS[c] || String(c).toUpperCase();
 const lapTime = (t) => `${Math.floor(t / 3840)}:${String(Math.floor(t / 64) % 60).padStart(2, '0')}.${String(Math.floor((t % 64) * 100 / 64)).padStart(2, '0')}`;
 let modsOn = false;
+let onlineGame = false;        // the game started in a room
 let gameHere = false;          // the game files are in this browser (refresh() in init)
 const races = raceTracker();      // each lap's race, for its replay (replay-watch.js)
 function reportLap(track, flags, code, lap, laps, ticks) {
   const car = String.fromCharCode(code & 255, (code >>> 8) & 255, (code >>> 16) & 255, code >>> 24).replace(/\0[^]*$/, '').toLowerCase();
-  log(`lap ${lap}/${laps}: ${lapTime(ticks)} on ${trackName(track)}${flags & 1 ? ' backward' : ''} in the ${carName(car)}${modsOn ? ' (mods on: not sent to the lap records)' : ''}`);
-  if (modsOn) return;
+  // 128: the runtime tells catch-up (32); with one from before, every online race had it
+  let f = flags & (1 | 2 | 16 | 32);
+  if (!(flags & 128) && onlineGame) f |= 32;
+  if (modsOn) f |= 64;
+  const apart = [f & 32 && 'catch-up on', f & 64 && 'mods on'].filter(Boolean).join(', ');
+  log(`lap ${lap}/${laps}: ${lapTime(ticks)} on ${trackName(track)}${flags & 1 ? ' backward' : ''} in the ${carName(car)}${apart ? ` (${apart}: for the catch-up & mods records)` : ''}`);
   const n = cleanName($('pname')?.value).trim();
   if (!n) return;
   const race = races.forLap(track, flags, lap, laps);
   // with the player key: the lap is the player's, under its name on the server (players.mjs)
   fetch('__lap', { method: 'POST', headers: { 'Content-Type': 'application/json' }, keepalive: true,
-    body: JSON.stringify({ n, k: me.k || undefined, s: logSession, race: race.id, track, f: flags & 31, car, lap, laps, ticks, b: buildInfo?.built || '' }) })
+    body: JSON.stringify({ n, k: me.k || undefined, s: logSession, race: race.id, track, f, v: 2, car, lap, laps, ticks, b: buildInfo?.built || '' }) })
     .then(async (r) => {
       const d = await r.json().catch(() => null);
       if (!r.ok) { log(`lap records: not sent (${d?.error === 'taken' ? `${n} is another player's name` : d?.error || r.status})`); return; }
@@ -1421,10 +1428,15 @@ function reportLap(track, flags, code, lap, laps, ticks) {
 }
 function setupLaps() {
   const sel = $('laps-track');
-  let data = null, dir = 'f', want = '0';
-  try { want = localStorage.getItem('nfs2se.lapsTrack') || want; dir = localStorage.getItem('nfs2se.lapsDir') === 'b' ? 'b' : 'f'; } catch {}
+  // kind: '' the standard boards, ':x' catch-up & mods (laps.mjs)
+  let data = null, dir = 'f', want = '0', kind = '';
+  try {
+    want = localStorage.getItem('nfs2se.lapsTrack') || want; dir = localStorage.getItem('nfs2se.lapsDir') === 'b' ? 'b' : 'f';
+    kind = localStorage.getItem('nfs2se.lapsKind') === ':x' ? ':x' : '';
+  } catch {}
   for (const b of $('laps-dir').children) b.classList.toggle('on', b.dataset.d === dir);
-  const board = (t, d) => data?.boards?.[`${t}:${d}`] || [];
+  for (const b of $('laps-kind').children) b.classList.toggle('on', b.dataset.k === kind);
+  const board = (t, d) => data?.boards?.[`${t}:${d}${kind}`] || [];
   function options() {
     const ids = new Set(Object.keys(TRACKS).map(Number));
     for (const k of Object.keys(data?.boards || {})) ids.add(Number(k.split(':')[0]));
@@ -1444,7 +1456,7 @@ function setupLaps() {
       el('span', { className: 'tm', textContent: lapTime(r.ticks) }),
       el('span', { className: 'c', textContent: carName(r.car), title: age(r.t) }, ...LAP_TAGS.filter(([b]) => r.f & b).map(([, t, title]) => el('span', { className: 'ltag', textContent: t, title })),
         ...(r.rp ? [el('a', { className: 'rpl', href: `__replay/${r.rp}.rpy`, textContent: '▶ replay', title: `The game's replay of ${r.n}'s race: this was lap ${r.lap} of ${r.laps}`, onclick: (e) => takeReplay(e, r) })] : []))))
-      : [el('li', { className: 'muted', textContent: `No laps on ${trackName(Number(sel.value))} ${dir === 'b' ? 'backwards' : 'forwards'} yet. Finish one and it shows here.` })]));
+      : [el('li', { className: 'muted', textContent: `No${kind ? ' catch-up or mods' : ''} laps on ${trackName(Number(sel.value))} ${dir === 'b' ? 'backwards' : 'forwards'} yet.${kind ? '' : ' Finish one and it shows here.'}` })]));
     const names = new Set(); for (const b of Object.values(data?.boards || {})) for (const r of b) names.add(r.p || 'n:' + r.n.toLowerCase());
     $('laps-count').textContent = names.size ? `${names.size} racer${names.size === 1 ? '' : 's'}` : 'no laps yet';
   }
@@ -1472,6 +1484,12 @@ function setupLaps() {
     dir = d; try { localStorage.setItem('nfs2se.lapsDir', dir); } catch {}
     for (const b of $('laps-dir').children) b.classList.toggle('on', b === e.target);
     draw();
+  };
+  $('laps-kind').onclick = (e) => {
+    const k = e.target.dataset?.k; if (k === undefined) return;
+    kind = k; try { localStorage.setItem('nfs2se.lapsKind', kind); } catch {}
+    for (const b of $('laps-kind').children) b.classList.toggle('on', b === e.target);
+    options(); draw();
   };
   $('pname')?.addEventListener('input', () => data && draw());
   document.addEventListener('nfs2se-player', () => poll());       // a new name or another player: fresh boards
