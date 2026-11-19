@@ -73,7 +73,7 @@ static void unlock_all(void) {
  * saves it. So for the local players' slots it is held at 0 during races. Found by watching the
  * game's reads of the Left key through to the car (RT_RWATCH, a WWATCH=1 build). */
 #define RACE_PARAMS 0x510040u           /* 8 x 0x40 */
-#define SPLIT_SCREEN_PLAYERS 0x50ffd8u  /* 2 with two players on one screen */
+#define SPLIT_SCREEN_PLAYERS 0x50ffd8u  /* the race mode: 0 one player, 1 split screen, 4 network */
 static int instant = -1;
 static void instant_steering(void) {
     if (instant < 0) { instant = getenv("RT_INSTANT_STEER") && atoi(getenv("RT_INSTANT_STEER")); if (instant) rt_log("game: instant steering"); }
@@ -89,10 +89,38 @@ static void instant_steering(void) {
     }
 }
 
+/* Catch-up (Game Setup's "catch up": cars that fall behind go faster). The game keeps it at
+ * settings +0x0e (0x510b7e) and copies it into the race at 0x50ffe0 (0x405fc0); a race gives
+ * the cars the catch-up handlers when that is on and the race mode (0x50ffd8) is split screen or
+ * network (0x44e451). In one player the menu greys the row out and clears it; switching Game
+ * Setup to split screen or network turns it back on (0x40f0e6), and the defaults have it on
+ * (0x408e28), so every online race had it. Laps with it are much faster for whoever is behind:
+ * each lap tells the page (flag 32, FLAG in web/laps.mjs), and the lap records keep them apart.
+ * Here it starts off: when the settings are in and each time Game Setup leaves one player
+ * (for a few frames, in case the menu catches up a frame later). Turning it on in Game Setup
+ * still works. RT_CATCHUP=1 keeps the game's own way. */
+#define GAME_TYPE (SETTINGS + 0x9u)     /* 0 one player, else split screen or network */
+#define CATCH_UP (SETTINGS + 0xeu)
+#define RACE_CATCH_UP 0x50ffe0u
+static void catch_up_off(void) {
+    static int keep = -1, type = -1, hold;
+    if (keep < 0) { const char *e = getenv("RT_CATCHUP"); keep = e && *e && *e != '0'; }
+    if (keep || !name_valid(G + OWN_NAME)) return;
+    int t = G[GAME_TYPE];
+    if (type < 0 || (type == 0 && t != 0)) hold = 10;
+    type = t;
+    if (hold > 0) {
+        hold--;
+        if (G[CATCH_UP]) { G[CATCH_UP] = 0; rt_log("game: catch-up off (turn it on in Game Setup)"); }
+    }
+}
+static int race_catch_up(void) { return RD32(RACE_CATCH_UP) && (int32_t)RD32(SPLIT_SCREEN_PLAYERS) >= 1; }
+
 static void lap_report(uint32_t car, int lap, uint32_t ticks) {
     uint32_t code = RD32(car + 0x1dc);
     int track = (int)RD32(RACE_TRACK), laps = (int)RD32(RACE_LAPS);
-    int flags = (RD32(RACE_BACKWARD) ? 1 : 0) | (RD32(RACE_MIRRORED) ? 2 : 0) | (instant > 0 ? 16 : 0);
+    /* 128: this runtime tells catch-up (32); the page knows older ones didn't */
+    int flags = (RD32(RACE_BACKWARD) ? 1 : 0) | (RD32(RACE_MIRRORED) ? 2 : 0) | (instant > 0 ? 16 : 0) | (race_catch_up() ? 32 : 0) | 128;
     char cc[5] = { 0 }; memcpy(cc, &code, 4);
     for (int i = 0; i < 4; i++) if (cc[i] < 32 || cc[i] > 126) cc[i] = '?';
     rt_log("game: lap %d/%d %u:%02u.%02u (track %d, flags %#x, car %s)", lap, laps, ticks / 64 / 60, ticks / 64 % 60, ticks % 64 * 100 / 64, track, flags, cc);
@@ -111,7 +139,10 @@ static void lap_watch(void) {
     if (car < 0x400000u || car + 0x690 >= GUEST_SIZE) { seen_car = 0; return; }
     int n = (int)RD32(car + 0x230);
     if (n < 0 || n > 64) return;
-    if (car != seen_car) { seen_car = car; done = n; return; }   /* laps from before: not now */
+    if (car != seen_car) {                                     /* laps from before: not now */
+        if (RD32(SPLIT_SCREEN_PLAYERS)) rt_log("game: race mode %d, catch-up %s", (int)RD32(SPLIT_SCREEN_PLAYERS), race_catch_up() ? "on" : "off");
+        seen_car = car; done = n; return;
+    }
     if (n < done) done = n;                                    /* a new race, or a restart */
     while (done < n && done < 8) {
         uint32_t ticks = RD32(car + 0x238 + 4u * (uint32_t)done);
@@ -149,6 +180,7 @@ void __wrap_f_0045A060(CPU *c) {
 void game_frame(void) {
     set_player_name();
     unlock_all();
+    catch_up_off();
     instant_steering();
     lap_watch();
 }
