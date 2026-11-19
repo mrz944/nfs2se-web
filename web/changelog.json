@@ -2,6 +2,11 @@
   "game": "NFS II SE",
   "about": "What changed on nfs2se.xyz, day by day. Kinds: new, improved, fixed. Days run 05:00 to 05:00 Polish time. nfs3-webgl's tools/discord/changelog.mjs posts them to Discord.",
   "days": [
+    { "date": "2026-11-19", "items": [
+      ["fixed", "Lap Records: laps driven with catch-up on have their own boards now. The game turned catch-up on by itself for every online race, so whoever fell behind went faster and could drive laps nobody manages alone. Those laps, the ones from before too, are under the new Catch-up & mods tab, tagged CU. The Standard boards changed order."],
+      ["improved", "Catch-up starts off. Turn it on in Game Setup if you want it; online, the host's choice counts for everyone. Online races with it off count for the Standard boards."],
+      ["new", "Laps driven with mods on count too, on the Catch-up & mods boards, tagged MOD."]
+    ] },
     { "date": "2026-11-16", "items": [
       ["new", "Your name is yours: change it whenever you like and your lap records go with it. The Lap Records and Most Active Racers show each racer once, with their best. Records from before stay with the name they were driven under, and go to whoever comes back with that name saved."],
       ["new", "Race as yourself on another device: Use on another device, under Your name, shows 8 words. Enter them on your phone or another computer to race there with your name and lap records. No account, no e-mail."],
