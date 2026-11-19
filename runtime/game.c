@@ -58,12 +58,16 @@ static void unlock_all(void) {
  * 8 laps at most); +0x1dc is its model code ("MCF1"). The race: track number at 0x50ffec (the
  * TRxx file: 0 Proving Grounds, 2 Outback ... 8 Monolithic Studios), laps at 0x50ffcc, backwards
  * at 0x50fff8, mirrored at 0x50fffc. Found by snapshotting the cars while the AI drove laps, and
- * races set up each way. Each lap the local player finishes goes to the page (Module.onLap). */
+ * races set up each way. Each lap the local player finishes goes to the page (Module.onLap).
+ * Not while a replay plays (Options > Load/Save > View Replay): the cars drive their recorded
+ * race again, laps and all. The race config's +0x1c (0x50ffe4) is 2 then (the replay writer
+ * sets it in the file, and playing it loads that config); 0 in races. */
 #define CAR_TABLE 0x50f918u
 #define RACE_TRACK 0x50ffecu
 #define RACE_LAPS 0x50ffccu
 #define RACE_BACKWARD 0x50fff8u
 #define RACE_MIRRORED 0x50fffcu
+#define RACE_KIND 0x50ffe4u     /* 2: a replay plays */
 /* Instant steering (RT_INSTANT_STEER=1, the start page's setting): the wheels reach full lock at
  * once instead of ramping. Each physics tick (0x468b10) the game moves a car's steering (+0x2e4)
  * toward where the controls point (+0x2e0) by at most the car's step (its spec +0x130/+0x134),
@@ -139,11 +143,16 @@ static void lap_watch(void) {
     if (car < 0x400000u || car + 0x690 >= GUEST_SIZE) { seen_car = 0; return; }
     int n = (int)RD32(car + 0x230);
     if (n < 0 || n > 64) return;
+    int replay = RD32(RACE_KIND) == 2;
+    static int replay_was;
+    if (replay != replay_was) rt_log("game: %s", replay ? "a replay plays: its laps aren't the player's" : "the replay is over");
+    replay_was = replay;
     if (car != seen_car) {                                     /* laps from before: not now */
-        if (RD32(SPLIT_SCREEN_PLAYERS)) rt_log("game: race mode %d, catch-up %s", (int)RD32(SPLIT_SCREEN_PLAYERS), race_catch_up() ? "on" : "off");
+        if (RD32(SPLIT_SCREEN_PLAYERS) && !replay) rt_log("game: race mode %d, catch-up %s", (int)RD32(SPLIT_SCREEN_PLAYERS), race_catch_up() ? "on" : "off");
         seen_car = car; done = n; return;
     }
     if (n < done) done = n;                                    /* a new race, or a restart */
+    if (replay) { done = n; return; }                          /* a replay: its laps were driven before */
     while (done < n && done < 8) {
         uint32_t ticks = RD32(car + 0x238 + 4u * (uint32_t)done);
         if (!ticks) break;                                     /* written a moment later */
