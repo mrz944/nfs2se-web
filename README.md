@@ -51,7 +51,9 @@ and [NFS4 Web](https://github.com/mrz944/nfs4-web).
 | **Menus and modes.** Single Race, Tournament, Knockout, Showcase, as you remember them. | **Browser comfort.** One-time download into OPFS (resumable, from R2), AudioWorklet sound, mouse capture, frame pacing, page logs. |
 
 **Lap records, names and replays.** The start page keeps every racer's best lap on each track, in
-both directions, tagged for mirrored and instant steering (laps driven with mods on don't count).
+both directions, tagged for mirrored and instant steering. Laps driven with catch-up on (cars that
+fall behind go faster) or with mods on have their own boards (*Catch-up & mods*). Catch-up starts
+off; the game would turn it on for every split-screen and online race.
 Each browser gets a player key, 8 words that are never shown unless you ask: the server stores only
 a hash of them. The key owns your name, so you can change it and your laps go with it, and the same
 8 words on another device make you the same racer there (*Your name › Use on another device*).
@@ -181,7 +183,8 @@ on your machine only:
 `/__stats` asks for a password (any user name): `NFS2SE_STATS_PASSWORD`, or the one the server
 writes to `build/stats-password` on first start. Its Players section looks up one player;
 `node tools/players.mjs` does the same from the terminal and fixes names and laps by hand
-(`who`, `list`, `give`, `rename`, `forget`). `?icetest` on the page logs what each STUN and TURN
+(`who`, `list`, `give`, `rename`, `forget`). `node tools/catchup-laps.mjs` moved the laps driven
+with catch-up before the runtime said so (from their replays and page logs). `?icetest` on the page logs what each STUN and TURN
 server gives that browser, for players whose links never come up.
 
 > **Public hosting.** [nfs2se.xyz](https://nfs2se.xyz/) runs through a Cloudflare Tunnel to the
@@ -207,6 +210,7 @@ much easier to chase than in a browser.
 | `RT_MEMDUMP=s:n:every` · `RT_CARDUMP=file` (`RT_CARDUMP_MS`) | guest memory snapshots · the 8 car records and game data over time |
 | `WWATCH=1 ./build.sh` → `build/nfs2se-wwatch` with `RT_WWATCH=addr:len` · `RT_RWATCH=addr:len` | log the game's writes / reads there, with the lifted line (its comment names the x86 instruction) |
 | `RT_LAP_CAR=k` | report car k's laps instead of the player's (testing lap records with the AI) |
+| `RT_CATCHUP=1` | leave catch-up as the game has it (on for every split-screen and network race) |
 | `RT_VSYNC=0` | don't pace `grBufferSwap` to 60 Hz |
 | `RT_MULTICORE=1` | run game threads truly in parallel (the movie player may then fail) |
 | `RT_SLOW=k[@s][,ns]` | act like a k times slower computer from second s on, each clock read costing ns more (as in the browser); the log's `lock:` line every 10 s shows how the threads share the CPU |
@@ -230,6 +234,7 @@ much easier to chase than in a browser.
 - ✅ Lap-record replays: the game's `replay.rpy` of each best lap's race, uploaded by the page and
   put into the game's save folder on request (`web/replays.mjs`, `web/replay-watch.js`)
 - ✅ Instant steering (Game Settings): the wheels reach full lock at once, as with a joystick
+- ✅ Catch-up starts off (Game Setup turns it on); laps with catch-up or mods have their own boards
 - ✅ Phones and tablets: on-screen touch controls; iPhones on iOS 18 can save the game files (OPFS
   worker), with an Add to Home Screen hint for fullscreen
 - 🚧 Next: wider testing with more players and real internet links

@@ -156,6 +156,21 @@ is why clients lagged on 1999-era internet links. Packets are tagged `0xEA` +
   - Analytics events, play and connection logs, room logs and session logs carry the player id.
     `/__stats` has a Players section with a lookup, and `tools/players.mjs` does the same from
     the terminal and fixes what players can't (an earlier name's laps, a lost passphrase).
+- Catch-up (`runtime/game.c`): Game Setup's "catch up" (settings +0x0e, 0x510b7e) goes into the
+  race at 0x50ffe0 (`0x405fc0`); cars get the catch-up handlers when it is on in a split-screen
+  or network race (`0x44e451`, race mode at 0x50ffd8: 0 one player, 1 split screen, 4 network).
+  The menu clears it for one player and turns it on again when you leave one player
+  (`0x40f0e6`), so every online race had it, and trailing players drove laps 6 to 16 s faster
+  than anyone alone.
+  - The runtime turns it off at start and whenever Game Setup leaves one player; the player can
+    still turn it on. Online, the host's setting counts for everyone (tested natively with two
+    instances: the client's race followed the host's either way).
+  - Each lap says whether its race had it (flag 32), and the log has `game: race mode M,
+    catch-up on|off` at each multiplayer race. The page adds 64 for mods; the server keeps those
+    laps on their own boards (`track:dir:x`), shown under *Catch-up & mods* with CU and MOD tags.
+  - Laps from before: `tools/catchup-laps.mjs` flags them from their race's replay header
+    (+0x10 race mode, +0x18 catch-up) or, without one, from the page log (laps after
+    `net: joined room`: a game started in a room reports only online laps).
 - `web/replays.mjs`, `web/replay-watch.js`: the game's replay of the race each best lap was
   driven in.
   - At the end of every race, finished or quit, NFS II SE writes `replay.rpy` in its folder
