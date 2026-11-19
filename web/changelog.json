@@ -5,7 +5,19 @@
     { "date": "2026-11-19", "items": [
       ["fixed", "Lap Records: laps driven with catch-up on have their own boards now. The game turned catch-up on by itself for every online race, so whoever fell behind went faster and could drive laps nobody manages alone. Those laps, the ones from before too, are under the new Catch-up & mods tab, tagged CU. The Standard boards changed order."],
       ["improved", "Catch-up starts off. Turn it on in Game Setup if you want it; online, the host's choice counts for everyone. Online races with it off count for the Standard boards."],
-      ["new", "Laps driven with mods on count too, on the Catch-up & mods boards, tagged MOD."]
+      ["new", "Laps driven with mods on count too, on the Catch-up & mods boards, tagged MOD."],
+      ["fixed", "Lap Records: watching a replay in the game (View Replay) counted its laps as yours. Replays don't count now."],
+      ["fixed", "Lap Records: races driven while waiting in an online room sent no laps, and Instant steering was off in them. They count now."],
+      ["improved", "Lap Records: a race's replay that didn't go up when it ended (the page was closed first) goes up the next time you open the page."],
+      ["fixed", "Online: two races in one room pulled each other's cars around. Each race only listens to its own now."],
+      ["new", "Online rooms show each player's country flag."],
+      ["new", "With the game open in another tab, Play here instead moves it here. A tab where it's running keeps it until Exit Game."],
+      ["improved", "Phones: the game download keeps the screen on, and carries on by itself after the screen locked or you switched apps. On mobile data or data saver (Android) it asks first."],
+      ["improved", "Instagram's, Facebook's and other apps' own browsers can't run the game: they now show how to open the page in Chrome or Safari. Private windows and nearly full disks are told before the download, not after it fails."],
+      ["fixed", "http://nfs2se.xyz links now go to the secure page, where the game can run."],
+      ["fixed", "Windows: on some sound devices the sound broke up every few seconds."],
+      ["improved", "Fewer short freezes while the game loads, and Start is quicker from the second time on: the browser keeps the game instead of downloading it again."],
+      ["improved", "When the game stops on a missing or damaged file, the page downloads it again and says so, or that the storage is full."]
     ] },
     { "date": "2026-11-16", "items": [
       ["new", "Your name is yours: change it whenever you like and your lap records go with it. The Lap Records and Most Active Racers show each racer once, with their best. Records from before stay with the name they were driven under, and go to whoever comes back with that name saved."],
