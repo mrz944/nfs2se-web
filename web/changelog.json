@@ -2,6 +2,9 @@
   "game": "NFS II SE",
   "about": "What changed on nfs2se.xyz, day by day. Kinds: new, improved, fixed. Days run 05:00 to 05:00 Polish time. nfs3-webgl's tools/discord/changelog.mjs posts them to Discord.",
   "days": [
+    { "date": "2026-11-24", "items": [
+      ["fixed", "Online: after the first race of a knockout everyone waited at \"waiting for players\", sometimes for good. A pause of more than a few seconds in an online race didn't end either. Both carry on now."]
+    ] },
     { "date": "2026-11-19", "items": [
       ["fixed", "Lap Records: the game turned catch-up on by itself in every online race, so whoever fell behind went faster than anyone can alone. Those laps, old ones too, are now under the new Catch-up & mods tab, tagged CU."],
       ["improved", "Catch-up starts off (Game Setup turns it on; online, the host decides). Online races without it count for the Standard boards."],
