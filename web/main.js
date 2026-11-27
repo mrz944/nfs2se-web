@@ -135,7 +135,8 @@ async function saveDir() {
   return d;
 }
 async function hasGame() {
-  try { const d = await gameDir(); await d.getFileHandle('.download-complete'); return true; } catch { return false; }
+  // nfs2se.p too: a copy from before Verok's patch (NFS2SEA.EXE) downloads again
+  try { const d = await gameDir(); await d.getFileHandle('.download-complete'); await d.getFileHandle('nfs2se.p'); return true; } catch { return false; }
 }
 async function sha256(blob) {
   const h = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer());
@@ -196,7 +197,7 @@ async function importPack(base) {
   const idx = await ir.json();
   if (idx.format !== 1) throw new Error('Unknown game pack format. Reload to retry.');
   if (buildInfo?.exe_sha256 && idx.exe_sha256 !== buildInfo.exe_sha256)
-    throw new Error(`The hosted game files don't match this build (NFS2SEA.EXE ${idx.exe_sha256.slice(0, 12)}…, build expects ${buildInfo.exe_sha256.slice(0, 12)}…).`);
+    throw new Error(`The hosted game files don't match this build (nfs2se.exe ${idx.exe_sha256.slice(0, 12)}…, build expects ${buildInfo.exe_sha256.slice(0, 12)}…).`);
   const root = await navigator.storage.getDirectory();
   let dir = await gameDir(true);
   if ((await readText(dir, '.pack-id')) !== idx.id) {               // other or no earlier download: start clean
@@ -494,13 +495,14 @@ async function importFolder(files) {
     return !name.startsWith('._') && name !== '.DS_Store' && f.webkitRelativePath.split('/').length > 1;
   });
   const rel = (f) => f.webkitRelativePath.split('/').slice(1).join('/');
-  const exe = list.find((f) => rel(f).toLowerCase() === 'nfs2sea.exe');
-  if (!exe) throw new Error('No NFS2SEA.EXE in that folder. Pick the folder that contains NFS2SEA.EXE, FEDATA and GAMEDATA.');
+  // Verok's patch v1.0.5 with SilentPatch: the folder tools/verok-patch.py wrote (nfs2se.exe, nfs2se.p)
+  const exe = list.find((f) => rel(f).toLowerCase() === 'nfs2se.exe');
+  if (!exe) throw new Error('No nfs2se.exe in that folder. Pick the folder that contains nfs2se.exe, nfs2se.p, FEDATA and GAMEDATA.');
   if (buildInfo?.exe_sha256) {
-    status('Checking NFS2SEA.EXE…');
+    status('Checking nfs2se.exe…');
     const h = await sha256(exe.blob ? await exe.blob() : exe);
     if (h !== buildInfo.exe_sha256)
-      throw new Error(`This build was recompiled from a different NFS2SEA.EXE (expected ${buildInfo.exe_sha256.slice(0, 12)}…, got ${h.slice(0, 12)}…).`);
+      throw new Error(`This build was recompiled from a different nfs2se.exe (expected ${buildInfo.exe_sha256.slice(0, 12)}…, got ${h.slice(0, 12)}…).`);
   }
   const root = await navigator.storage.getDirectory();
   try { await root.removeEntry(GAME_DIR, { recursive: true }); } catch {}
@@ -2067,7 +2069,7 @@ async function init() {
     gameHere = ok;
     $('pick-label').hidden = ok; $('start').hidden = !ok; $('forget').hidden = !ok;
     (await modsUi)?.refresh();
-    status(ok ? 'Game files are stored in this browser. Ready.' : 'Choose your NFS II SE folder (the one with NFS2SEA.EXE, FEDATA and GAMEDATA).');
+    status(ok ? 'Game files are stored in this browser. Ready.' : 'Choose your NFS II SE folder (the one with nfs2se.exe, FEDATA and GAMEDATA).');
   };
   $('pick').addEventListener('change', async (e) => {
     try { await importFolder(e.target.files); } catch (err) { status(err.message, true); $('progress').hidden = true; return; }
