@@ -2,6 +2,9 @@
   "game": "NFS II SE",
   "about": "What changed on nfs2se.xyz, day by day. Kinds: new, improved, fixed. Days run 05:00 to 05:00 Polish time. nfs3-webgl's tools/discord/changelog.mjs posts them to Discord.",
   "days": [
+    { "date": "2026-11-27", "items": [
+      ["fixed", "Lap Records: the name a new player gets (Racer and 3 digits) was nearly always another player's by now, so their laps weren't taken. New players get a free name, and a given name that's someone else's changes to a free one by itself. Pick your own under Your name any time."]
+    ] },
     { "date": "2026-11-24", "items": [
       ["fixed", "Online: after the first race of a knockout everyone waited at \"waiting for players\", sometimes for good. A pause of more than a few seconds in an online race didn't end either. Both carry on now."]
     ] },
