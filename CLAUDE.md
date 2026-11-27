@@ -43,7 +43,12 @@ tools/staging.sh tunnel              # cloudflared for staging only (build/cloud
 ## Native harness
 
 ```sh
+.venv/bin/python -I tools/verok-patch.py build/verok/nfs2_se_patch_1.05 game   # once: Verok + SilentPatch into game/ (nfs2se.exe, nfs2se.p, ini, renderer, text) + build/verok-lift/
 ./build.sh game            # lift (if gen/ is missing, or RELIFT=1) + compile -> build/nfs2se
 env RT_HEADLESS=1 RT_NOSOUND=1 RT_DUMP=N RT_DUMP_FROM=s RT_DUMP_DIR=dir RT_INPUT="ms:KEY,..." timeout T build/nfs2se game
 tools/nettest.sh           # two instances online, with: node web/serve.mjs 8097 --relay-tcp <sock> --data <dir>
 ```
+
+- The run log's `verok patches: N ranges checked, ..., 0 mismatched` line (first frame) says the lift matches what nfs2se.p patches at run time. A `VEROK PATCH MISMATCH` means tools/verok-patch.py needs that site.
+- `call to unlifted code X` adds X to build/missing.txt; `RELIFT=1 ./build.sh game` picks it up. The NFS2SEA lift's leftovers are in build/old-nfs2sea/.
+- game.c's tweaks (names, unlock, catch-up off, instant steering, laps) still use NFS2SEA addresses and are off until P2 (`RT_GAME_TWEAKS=1` forces them).
