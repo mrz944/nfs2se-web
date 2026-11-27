@@ -103,6 +103,30 @@ How the lift works (changes P1):
 - `build-info.json`: the `exe_sha256` of the new exe.
 - Done when the native headless harness gets through the menu and a race with frame dumps. Then the browser build.
 
+### P1 results (2026-11-27): done
+
+The menu and a race run natively (headless, frame dumps) and in the browser (headless Brave against a private server on 8097).
+- `tools/verok-patch.py` writes `game/nfs2se.exe` (the 54 Verok patches, SilentPatch, and a code cave for SilentPatch's routines at 0x4c52e0), `game/nfs2se.p` (SilentPatch's gameMode fix), `nfs2se.ini`, `DRIVERS/GLIDE3X/` and the patch's text and HRZ files. It also writes `build/verok-lift/` (13 seeds and the NoMovies variants). Retail's text files are backed up in `build/verok-retail-backup/`.
+- Lifted modules: nfs2se.exe at 0x400000 (3958 functions), EACSND.DLL at 0xb00000, nfs2se.p at 0xc00000 (126), voodoo2a.dll at 0xd00000 (421).
+- Lifter:
+  - pseudo-relocations by scan when an image has none;
+  - code seeded from instruction immediates;
+  - pointer tables in the code section;
+  - unaligned data pointers to prologues or record runs (Watcom's 6-byte startup table);
+  - guessed seeds that decode to data (strings, the IAT, I/O instructions) are dropped;
+  - `jmp [reg + table]` jump tables;
+  - jumps out of the image become `call_indirect`;
+  - `--variants`.
+  On NFS2SEA, this covers 99.87% of what its real relocations reach.
+- Runtime:
+  - lifted DLLs in import tables get their DllMain on the game thread before the entry point;
+  - MSVCRT (9 functions), GetWindowRect/GetWindowPlacement/SetWindowPlacement, DisableThreadLibraryCalls, SetProcessAffinityMask;
+  - `GAME_EXE` nfs2se.exe;
+  - the patch check (VirtualProtect + `verok_patch_check`): 60 ranges, 57 as in the lift, 3 as expected, 0 mismatched, so bpp 16 is right;
+  - `g_variant_nomovies` from nfs2se.ini.
+- Page: `nfs2se.exe` in the folder import, `hasGame()` also needs nfs2se.p (so a pre-Verok copy downloads again), and the About credits Verok's patch and SilentPatch.
+- Not yet: game.c's tweaks are off (P2), and widescreen (P3; Resolution=2 = 640×480 for now).
+
 ## P2: port main's game changes to the new exe (3–5 days)
 
 About 45 hardcoded addresses must be found again. `grep -oE '0x[45][0-9a-f]{5}' runtime/*.c`: game.c has 35, net.c 3, gpu.c 3, modules.c 2, core.c 1. Plus the `--wrap=f_0045A060` link hook (the input tick behind instant steering, in both build scripts). They include:
