@@ -1,6 +1,6 @@
 """x86 -> C static recompiler.
 
-usage: python -I tools/lift.py <exe or dll> <outdir> [--name N] [--base HEX] [--seeds FILE]
+usage: python -I tools/lift.py <exe or dll> <outdir> [--name N] [--base HEX] [--seeds FILE]... [--variants FILE]
 
 Each guest function becomes `void f_XXXXXXXX(CPU *c)`. Flags are function
 locals (clang removes the dead ones); registers live in CPU. Unsupported
@@ -15,7 +15,7 @@ from capstone import x86 as X
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from pe import Image  # noqa: E402
-from discover import Program, JCC  # noqa: E402
+from discover import Program, JCC, Insn  # noqa: E402
 
 R32 = ["eax", "ecx", "edx", "ebx", "esp", "ebp", "esi", "edi"]
 R16 = ["ax", "cx", "dx", "bx", "sp", "bp", "si", "di"]
@@ -49,11 +49,24 @@ class Unsupported(Exception):
 
 
 class Emitter:
-    def __init__(self, prog):
+    def __init__(self, prog, variants=()):
         self.prog = prog
         self.img = prog.img
         self.unsupported = collections.Counter()
         self.func_set = set(prog.funcs)
+        # whole instructions with a second version, chosen at run time by g_variant_<flag>
+        self.variants = {}
+        for v in variants:
+            a, n = int(v["addr"], 16), v["len"]
+            if self.img.bytes(a, n).hex() != v["orig"]:
+                raise SystemExit(f"variant {a:#x}: image has {self.img.bytes(a, n).hex()}, not {v['orig']}")
+            ins, at = [], a
+            for i in prog.md.disasm(bytes.fromhex(v["new"]), a):
+                ins.append(Insn(i)); at += i.size
+            o = prog.decode(a)
+            if at != a + n or o is None or o.size != n:
+                raise SystemExit(f"variant {a:#x}: not whole instructions in both versions")
+            self.variants[a] = {"flag": v["flag"], "insns": ins}
 
     # ---------- operands ----------
     def rn(self, ins, r):
@@ -393,6 +406,8 @@ class Emitter:
                 return f"goto L_{t:08X};"
             if t in self.func_set:
                 return f"f_{t:08X}(c); return;"
+            if not self.prog.img.is_code(t):         # into another module (Verok's hooks)
+                return f"call_indirect(c, 0x{t:X}u); return;"
             return f"x86_trap(c, 0x{t:X}u, \"jump outside function\"); return;"
 
         if m == "mov" or m == "movsd" and o0 and o0.type == X.X86_OP_REG:
@@ -634,6 +649,13 @@ class Emitter:
             for ins in ins_list:
                 try:
                     code = self.insn(f, ins, labels)
+                    v = self.variants.get(ins.addr)
+                    if v:      # a patch the runtime switches on or off (tools/verok-patch.py)
+                        alt = []
+                        for vi in v["insns"]:
+                            alt += self.insn(f, vi, labels)
+                        code = [f"if (g_variant_{v['flag']}) {{ /* {' / '.join(i.text for i in v['insns'])} */"] + \
+                               ["    " + x for x in alt] + ["} else {"] + ["    " + x for x in code] + ["}"]
                 except Unsupported as e:
                     self.unsupported[ins.mnem] += 1
                     code = [f"x86_trap(c, 0x{ins.addr:X}u, \"unsupported: {ins.text}\"); return; /* {e} */"]
@@ -685,14 +707,15 @@ def promote_registers(text):
     return text
 
 
-def main(exe, outdir, seeds=(), modname="nfs2sea", base=None):
+def main(exe, outdir, seeds=(), modname="nfs2sea", base=None, variants=()):
     img = Image(exe, base)
     prog = Program(img)
     prog.run(seeds)
-    em = Emitter(prog)
+    em = Emitter(prog, variants)
     os.makedirs(outdir, exist_ok=True)
     funcs = sorted(prog.funcs.values(), key=lambda f: f.start)
     hdr = ["#pragma once", '#include "cpu.h"', '#include "lifted.h"'] + [f"void f_{f.start:08X}(CPU *c);" for f in funcs]
+    hdr += sorted({f"extern int g_variant_{v['flag']};" for v in variants})
     with open(os.path.join(outdir, "funcs.h"), "w") as fp:
         fp.write("\n".join(hdr) + "\n")
     CHUNK = 150
@@ -711,16 +734,22 @@ def main(exe, outdir, seeds=(), modname="nfs2sea", base=None):
         fp.write(f"const size_t g_functab_{modname}_len = {len(funcs)};\n")
     n = sum(len(b) for f in funcs for b in f.blocks.values())
     bad = sum(em.unsupported.values())
-    print(f"lifted {len(funcs)} functions, {n} instructions into {nfiles} files")
+    print(f"lifted {len(funcs)} functions, {n} instructions into {nfiles} files ({prog.dropped} guessed seeds dropped as data)")
     print(f"unsupported: {bad} ({100 * bad / max(n, 1):.3f}%)  {dict(em.unsupported.most_common(20))}")
 
 
 if __name__ == "__main__":
     seeds = []
-    if "--seeds" in sys.argv:
+    if "--seeds" in sys.argv:       # --seeds FILE, more than once is fine
         img_lo = Image(sys.argv[1], int(sys.argv[sys.argv.index("--base") + 1], 16) if "--base" in sys.argv else None)
-        with open(sys.argv[sys.argv.index("--seeds") + 1]) as fp:
-            seeds = [a for a in (int(l, 16) for l in fp if l.strip()) if img_lo.is_code(a)]
+        for k, a in enumerate(sys.argv):
+            if a == "--seeds":
+                with open(sys.argv[k + 1]) as fp:
+                    seeds += [a for a in (int(l, 16) for l in fp if l.strip()) if img_lo.is_code(a)]
+    variants = []
+    if "--variants" in sys.argv:    # tools/verok-patch.py's variants.json
+        import json
+        variants = json.load(open(sys.argv[sys.argv.index("--variants") + 1]))["variants"]
     name = sys.argv[sys.argv.index("--name") + 1] if "--name" in sys.argv else "nfs2sea"
     base = int(sys.argv[sys.argv.index("--base") + 1], 16) if "--base" in sys.argv else None
-    main(sys.argv[1], sys.argv[2], seeds, name, base)
+    main(sys.argv[1], sys.argv[2], seeds, name, base, variants)

@@ -4,7 +4,7 @@ import pefile
 
 
 class Image:
-    def __init__(self, path, base=None):
+    def __init__(self, path, base=None, scan_relocs=False):
         pe = pefile.PE(path)
         if base is not None and base != pe.OPTIONAL_HEADER.ImageBase:
             pe.relocate_image(base)  # applies .reloc fixups and updates ImageBase
@@ -29,11 +29,37 @@ class Image:
 
         # Relocations: VAs of 32-bit absolute pointers in the image.
         self.relocs = []
-        if hasattr(pe, "DIRECTORY_ENTRY_BASERELOC"):
+        if hasattr(pe, "DIRECTORY_ENTRY_BASERELOC") and not scan_relocs:
             for blk in pe.DIRECTORY_ENTRY_BASERELOC:
                 for e in blk.entries:
                     if e.type == 3:  # HIGHLOW
                         self.relocs.append(self.base + e.rva)
+        # No relocations (Verok's nfs2se.exe has them zeroed): stand-ins from a scan. Code: every
+        # byte offset holding a pointer into code; data: aligned. Measured on NFS2SEA.EXE against
+        # its real ones: all code pointers found in code, 682/690 in data (docs/verok-plan.md).
+        # discover.py seeds only the data ones directly, and code ones that turn out to be
+        # instruction operands.
+        self.relocs_scanned = not self.relocs and (scan_relocs or not pe.FILE_HEADER.Characteristics & 0x2000)
+        self.scanned_data = set()
+        if self.relocs_scanned:
+            raw = {self.base + s.VirtualAddress: s.PointerToRawData for s in pe.sections}
+            for name, va, size, ch in self.sections:
+                if name == ".reloc" or not size or ch & 0x80 or not raw[va]:
+                    continue                 # .bss (NFS2SEA's claims file bytes from offset 0)
+                o0 = va - self.base
+                end = min(o0 + size, len(self.mem)) - 3
+                code = ch & 0x20000000
+                hits = [o for o in range(o0, end) if self.code_lo <= struct.unpack_from("<I", self.mem, o)[0] < self.code_hi]
+                hitset = set(hits)
+                for o in hits:
+                    if code:
+                        self.relocs.append(self.base + o)
+                    # unaligned (packed structs): only what starts like a function, or a run of
+                    # records (Watcom's startup/shutdown routine table has 6-byte ones)
+                    elif o % 4 == 0 or self._prologue(struct.unpack_from("<I", self.mem, o)[0]) or \
+                            any(o + k in hitset or o - k in hitset for k in (6, 8, 12, 16)):
+                        self.relocs.append(self.base + o)
+                        self.scanned_data.add(self.base + o)
 
         # Imports: IAT slot VA -> "DLL!name"
         self.imports = {}
@@ -47,6 +73,10 @@ class Image:
         if hasattr(pe, "DIRECTORY_ENTRY_EXPORT"):
             for s in pe.DIRECTORY_ENTRY_EXPORT.symbols:
                 self.exports[self.base + s.address] = s.name.decode() if s.name else f"#{s.ordinal}"
+
+    def _prologue(self, va):
+        b = self.mem[va - self.base : va - self.base + 3]
+        return len(b) == 3 and (0x50 <= b[0] <= 0x57 or b[0] in (0x81, 0x83) and b[1] == 0xEC)
 
     def is_code(self, va):
         return self.code_lo <= va < self.code_hi
