@@ -1,0 +1,49 @@
+# nfs2-webgl staging (branch `verok-patch`)
+
+This folder is a git worktree of `../nfs2-webgl`, which is `main` and production. It runs the **staging** server for **staging.nfs2se.xyz**. The work here: rebuild the game on Verok's patch v1.0.5. **The plan is `docs/verok-plan.md`: follow it phase by phase (P0 first).**
+
+## Layout
+
+- Branch `verok-patch`, made from `main` at f046dd7, so it has everything main had up to then. Bring later main changes over with `git merge main`.
+- Copies of production's untracked files (btrfs reflinks):
+  - `game/` (the retail game; the patch files go here, never into ../nfs2-webgl/game);
+  - `.venv/`;
+  - `gen/` (lifted from NFS2SEA.EXE);
+  - `web/dist/`;
+  - `build/missing.txt`.
+- `build/` is staging's own data: logs, laps, players, analytics and push keys, separate from production.
+- No `web/game-source.json`: production's R2 pack only allows the nfs2se.xyz origin (docs/r2.md), so staging serves its own `game/` folder.
+
+## Running (the user starts everything; never start or restart servers or cloudflared yourself)
+
+`tools/staging.sh` (like nfs3's): staging has its **own tunnel "nfs2se-staging"**, apart from production's "nfs2se-web".
+
+```sh
+tools/staging.sh tunnel-setup        # once: creates the tunnel + DNS staging.nfs2se.xyz (uses ../nfs2-webgl/build/bin/cloudflared and its nfs2se.xyz cert)
+tools/staging.sh server              # node web/serve.mjs 8093 --game game --staging --open (noindex, STAGING ribbon)
+tools/staging.sh server --password   # the same behind a password page (tools/staging.sh password shows it)
+tools/staging.sh tunnel              # cloudflared for staging only (build/cloudflare/config.yml here)
+```
+
+- Ports: production NFS2 8092, staging 8093, NFS3 8080 (NFS3 staging 8098), NFS4 8084.
+- Private test servers on 8097 are fine, as long as they use `--data <scratch dir>` and are stopped afterwards. Don't stop them with `pkill -f "serve.mjs 8097"`: the pattern matches the shell running that command, so it kills itself. Use `timeout` instead.
+- `web/index.html` and `web/main.js` here are served live on staging as soon as they're saved, and `./build-web.sh game` updates staging's `web/dist`. Production is not touched either way, but tell the user what changed.
+- `serve.mjs --staging` and `tools/staging.sh` are staging-only changes. They are uncommitted until the user asks; if the branch is merged into main later, they can stay (both are off unless `--staging` is passed).
+
+## Rules from the user
+
+- Commit and push only when asked. No Claude co-author line in commits or PRs.
+- Never touch production (`../nfs2-webgl`: its web/, game/ and build/ data) from here. Merging into main happens only when the user says so.
+- Cloudflare: use the binary in `../nfs2-webgl/build/bin/cloudflared`, not nfs3's. Don't create services, tunnels or DNS records yourself: the user runs `tools/staging.sh tunnel-setup`, and you give them any other commands.
+- Names stay at most 8 characters (the game's limit).
+- In native tests, back up `game/FEDATA/PC/CONFIG` first and restore it afterwards. Remove test files afterwards (`game/replay.rpy`, test saves).
+- The Verok zip is third-party: unpack it into a new, empty folder, and run Python on it only with `-I`.
+- Discord posts (`../nfs3-webgl/tools/discord/changelog.mjs`) are run by the user.
+
+## Native harness
+
+```sh
+./build.sh game            # lift (if gen/ is missing, or RELIFT=1) + compile -> build/nfs2se
+env RT_HEADLESS=1 RT_NOSOUND=1 RT_DUMP=N RT_DUMP_FROM=s RT_DUMP_DIR=dir RT_INPUT="ms:KEY,..." timeout T build/nfs2se game
+tools/nettest.sh           # two instances online, with: node web/serve.mjs 8097 --relay-tcp <sock> --data <dir>
+```
