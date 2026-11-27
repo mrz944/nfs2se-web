@@ -379,7 +379,24 @@ function concat(...parts) {
 // and a few signs.
 const NAME_MAX = 8;
 const cleanName = (v) => String(v || '').replace(/[^A-Za-z0-9 ._!-]/g, '').replace(/\s+/g, ' ').trimStart().slice(0, NAME_MAX);
-const randomName = () => 'Racer' + Math.floor(100 + Math.random() * 900);   // 8 characters
+// A name for a new browser: a word and 3 digits (8 characters). Racer and 3 digits alone were
+// only 900 names, nearly all of them players' by 2026-11-27, so a new player's laps were refused
+// as another player's. freeName asks the server (players.mjs) for one nobody has.
+const NAME_WORDS = ['Racer', 'Drift', 'Turbo', 'Nitro', 'Rally', 'Pilot'];
+const randomName = () => NAME_WORDS[Math.floor(Math.random() * NAME_WORDS.length)] + Math.floor(100 + Math.random() * 900);
+async function freeName() {
+  let n = randomName();
+  for (let i = 0; i < 8; i++, n = randomName()) {
+    const r = await fetch('__name?n=' + encodeURIComponent(n), { cache: 'no-store' }).then((x) => x.json()).catch(() => null);
+    if (!r || r.state === 'free') return n;
+  }
+  return n;
+}
+// whether the name in the field is one the page gave (not one the player typed): those can
+// change by themselves when they turn out to be another player's. Racer and 3 digits: given by
+// pages before the mark was kept.
+const AUTO_NAME = 'nfs2se.nameAuto';
+const autoName = (n) => { try { const a = localStorage.getItem(AUTO_NAME); return a ? a === n : /^Racer\d{3}$/.test(n); } catch { return false; } };
 // Before the game starts, put the name where the game reads it:
 //  - fedata/text/text.eng: the default "Player1" (a string table: u32 offsets, then
 //    NUL-terminated strings), used until the game has saved its own settings. Rebuilt each
@@ -1352,6 +1369,7 @@ const pingClass = (ms) => (ms < 60 ? 'ping-good' : ms < 130 ? 'ping-ok' : 'ping-
 const savedPass = (code) => { try { return sessionStorage.getItem('nfs2se.pass.' + code) || ''; } catch { return ''; } };
 const savePass = (code, pw) => { try { pw ? sessionStorage.setItem('nfs2se.pass.' + code, pw) : sessionStorage.removeItem('nfs2se.pass.' + code); } catch {} };
 let gameStarted = false;
+let fixName = async () => false;     // setupOnline
 
 // ------------------------------------------------------------------ the player's name
 // "Your name" is the name of this browser's player (players.mjs). While it is typed the server
@@ -1391,12 +1409,29 @@ function setupOnline() {
   // a name from the start: the saved one, else a random Player1234 (everyone being "Player"
   // makes the in-game lists useless)
   try { name.value = cleanName(localStorage.getItem('nfs2se.name')).trim(); } catch {}
-  if (!name.value) { name.value = randomName(); try { localStorage.setItem('nfs2se.name', name.value); } catch {} }
+  if (!name.value) { name.value = randomName(); try { localStorage.setItem('nfs2se.name', name.value); localStorage.setItem(AUTO_NAME, name.value); } catch {} }
   name.addEventListener('input', () => {
     const c = cleanName(name.value); if (c !== name.value) name.value = c;
-    try { localStorage.setItem('nfs2se.name', name.value.trim()); } catch {}
+    try { localStorage.setItem('nfs2se.name', name.value.trim()); localStorage.removeItem(AUTO_NAME); } catch {}
   });
   const myName = () => cleanName(name.value).trim();
+  // the page's name turned out to be another player's (st: its state): a free one instead, and
+  // the player's own when it has a player without a name yet
+  fixName = async (st, hasPlayer) => {
+    const old = myName();
+    if (st !== 'taken' || !old || !autoName(old) || (me.p && me.n)) return false;
+    const n = await freeName();
+    if (myName() !== old) return false;
+    name.value = n;
+    try { localStorage.setItem('nfs2se.name', n); localStorage.setItem(AUTO_NAME, n); } catch {}
+    log(`name: ${old} is another player's, now ${n}`);
+    if (hasPlayer && me.k) {
+      const r = await playerApi('__name', { k: me.k, n, s: logSession });
+      if (r?.p && !r.error) { playerIs(r, 'new name'); return true; }
+    }
+    nameHint('free', `${old} was another player's name, so you're ${n} now.`);
+    return true;
+  };
   // whose our name is: asked once at start (a browser whose saved name has lap records from
   // before player keys takes them here), then while typing; changed on Enter or leaving the field
   me.ready.then(async () => {
@@ -1406,6 +1441,11 @@ function setupOnline() {
     playersOn = true;
     if (r.p) playerIs(r, r.claimed ? 'took the lap records from before under this name' : '');
     else nameHint(r.state);
+    // a player with no name yet, or none: is the page's name free?
+    if (r.p && !r.n) {
+      const s = await fetch('__name?n=' + encodeURIComponent(myName()), { cache: 'no-store' }).then((x) => x.json()).catch(() => null);
+      if (s && s.owner !== me.p) await fixName(s.state, true);
+    } else if (!r.p) await fixName(r.state, false);
   });
   let checkTimer = 0;
   name.addEventListener('input', () => {
@@ -1605,7 +1645,11 @@ function reportLap(track, flags, code, lap, laps, ticks) {
     body: JSON.stringify({ n, k: me.k || undefined, s: logSession, race: race.id, track, f, v: 2, car, lap, laps, ticks, b: buildInfo?.built || '' }) })
     .then(async (r) => {
       const d = await r.json().catch(() => null);
-      if (!r.ok) { log(`lap records: not sent (${d?.error === 'taken' ? `${n} is another player's name` : d?.error || r.status})`); return; }
+      if (!r.ok) {
+        log(`lap records: not sent (${d?.error === 'taken' ? `${n} is another player's name` : d?.error || r.status})`);
+        if (d?.error === 'taken') fixName('taken', !!me.k);     // (the lap made our player, without a name)
+        return;
+      }
       if (d?.p) { playerIs(d); race.sent++; try { localStorage.setItem('nfs2se.lapAt', String(Date.now())); } catch {} }
       if (d?.best) log('lap records: a new best lap for', d?.n || n);
     }).catch(() => {});
