@@ -730,7 +730,9 @@ uint32_t load_pe_at(const char *path, uint32_t *entry_out, uint32_t want_base) {
             else snprintf(nm, sizeof nm, "%s", HSTR(base + e + 2));
             char dl[64]; snprintf(dl, sizeof dl, "%s", dll);
             for (char *p = dl; *p; p++) *p = (char)toupper(*p);
-            WR32(base + iat + 4 * k, import_thunk(dl, nm));
+            uint32_t mb = module_import(dll), fn = 0;    /* a lifted DLL (nfs2se.p)? */
+            if (mb && !(fn = pe_export(mb, nm))) rt_fatal("%s has no export %s", dll, nm);
+            WR32(base + iat + 4 * k, mb ? fn : import_thunk(dl, nm));
         }
     }
     free(buf);
@@ -778,6 +780,7 @@ static void *game_thread(void *unused) {
     PUSH32(RET_SENTINEL);
     rt_log("entering guest entry point %#x", g_entry_point);
     bgl_acquire();
+    module_run_inits();                  /* DllMains of imported lifted DLLs (nfs2se.p) */
     call_indirect(c, g_entry_point);
     rt_log("entry point returned eax=%#x", c->r[EAX]);
     exit((int)c->r[EAX]);
@@ -844,6 +847,7 @@ int main(int argc, char **argv) {
     uint32_t entry;
     load_pe(g_exe_path, &entry);
     win32_init();
+    { void verok_init(void); verok_init(); }
     g_entry_point = entry;
     if (display_init()) {
         /* SDL wants the window and its events on the main thread:

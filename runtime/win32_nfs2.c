@@ -9,6 +9,9 @@
 #define _GNU_SOURCE
 #include "rt.h"
 #include <strings.h>
+#include <ctype.h>
+#include <math.h>
+#include <stdint.h>
 
 #define CD_LABEL "NFSIISE"
 
@@ -58,11 +61,56 @@ static uint32_t n_DirectXSetupGetVersion(CPU *c, const uint32_t *a) {
     return 1;
 }
 
+/* MSVCRT, for Verok's nfs2se.p (MSVC 6): all cdecl. _ftol takes ST0 (popped) and returns it
+ * truncated in EDX:EAX; ceil/floor take a double and return it in ST0. */
+static uint32_t m_malloc(CPU *c, const uint32_t *a) { (void)c; return galloc(A(0) ? A(0) : 1); }
+static uint32_t m_free(CPU *c, const uint32_t *a) { (void)c; if (A(0)) gfree(A(0)); return 0; }
+static uint32_t m__strupr(CPU *c, const uint32_t *a) {
+    (void)c; for (uint32_t p = A(0); p && G[p]; p++) G[p] = (uint8_t)toupper(G[p]);
+    return A(0);
+}
+static uint32_t m_strchr(CPU *c, const uint32_t *a) {
+    (void)c; const char *s = HSTR(A(0)), *r = s ? strchr(s, (int)(A(1) & 0xFF)) : NULL;
+    return r ? A(0) + (uint32_t)(r - s) : 0;
+}
+static uint32_t m_strrchr(CPU *c, const uint32_t *a) {
+    (void)c; const char *s = HSTR(A(0)), *r = s ? strrchr(s, (int)(A(1) & 0xFF)) : NULL;
+    return r ? A(0) + (uint32_t)(r - s) : 0;
+}
+static double arg_double(const uint32_t *a, int i) { uint64_t v = (uint64_t)a[i] | (uint64_t)a[i + 1] << 32; double d; memcpy(&d, &v, 8); return d; }
+static uint32_t m_ceil(CPU *c, const uint32_t *a) { fpush(c, ceil(arg_double(a, 0))); return 0; }
+static uint32_t m_floor(CPU *c, const uint32_t *a) { fpush(c, floor(arg_double(a, 0))); return 0; }
+static uint32_t m__ftol(CPU *c, const uint32_t *a) {
+    (void)a; double v = ST(0); fpop(c);
+    int64_t r = (v != v || v >= 9.2233720368547758e18 || v < -9.2233720368547758e18) ? INT64_MIN : (int64_t)v;
+    c->r[EDX] = (uint32_t)((uint64_t)r >> 32);
+    return (uint32_t)r;
+}
+static uint32_t m_sprintf(CPU *c, const uint32_t *a) {   /* %d %i %u %x %X %s %c %f, flags/width */
+    char *out = HSTR(A(0)); const char *f = HSTR(A(1)); int ai = 2; char *o = out;
+    while (*f) {
+        if (*f != '%') { *o++ = *f++; continue; }
+        char spec[32]; int k = 0; spec[k++] = *f++;
+        if (*f == '%') { *o++ = '%'; f++; continue; }
+        while (*f && strchr("-+ #0123456789.", *f) && k < 28) spec[k++] = *f++;
+        while (*f == 'l' || *f == 'h') f++;
+        char t = *f++; spec[k++] = t; spec[k] = 0;
+        uint32_t v = RD32(c->r[ESP] + 4 + 4 * ai++);
+        if (t == 's') o += sprintf(o, spec, v ? HSTR(v) : "(null)");
+        else if (t == 'f' || t == 'g' || t == 'e') { uint32_t h = RD32(c->r[ESP] + 4 + 4 * ai++); uint32_t w[2] = { v, h }; o += sprintf(o, spec, arg_double(w, 0)); }
+        else o += sprintf(o, spec, v);
+    }
+    *o = 0;
+    return (uint32_t)(o - out);
+}
+
 #define N(dll, n, args) { dll, #n, args, n_##n }
+#define M(n) { "MSVCRT.DLL", #n, -1, m_##n }
 const ImportDef imp_nfs2[] = {
     N("KERNEL32.DLL", GetDriveTypeA, 1), N("KERNEL32.DLL", GetLogicalDrives, 0),
     N("KERNEL32.DLL", GetLogicalDriveStringsA, 2), N("KERNEL32.DLL", GetVolumeInformationA, 8),
     N("WINMM.DLL", joyGetNumDevs, 0),
     N("DSETUP.DLL", DirectXSetupGetVersion, 2),
+    M(malloc), M(free), M(_strupr), M(strchr), M(strrchr), M(ceil), M(floor), M(_ftol), M(sprintf),
     { 0 },
 };

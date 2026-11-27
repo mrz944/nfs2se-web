@@ -8,6 +8,7 @@
  * It is set once, after the game has loaded or defaulted its settings, so a name typed in the
  * game still counts for the rest of the session (and the game saves it as usual). */
 #include "rt.h"
+#include <strings.h>
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
 #include <emscripten/threading.h>
@@ -170,14 +171,14 @@ static void lap_watch(void) {
  * the page's value while the page steers (anything but 0); a centred stick leaves the keys'.
  * Online that block is also what goes to the host, so others see the same steering.
  * RT_TOUCH_STEER=-127..127 sets it natively (testing). */
-#define CONTROLS 0x510800u
+#define CONTROLS 0x512a30u         /* Verok's nfs2se.exe (NFS2SEA: 0x510800) */
 static volatile int32_t touch_steer;
 #ifdef __EMSCRIPTEN__
 EMSCRIPTEN_KEEPALIVE volatile int32_t *rt_web_touch_steer(void) { return &touch_steer; }
 #endif
-void __real_f_0045A060(CPU *c);
-void __wrap_f_0045A060(CPU *c) {
-    __real_f_0045A060(c);
+void __real_f_0045BB50(CPU *c);        /* NFS2SEA's 0x45a060 */
+void __wrap_f_0045BB50(CPU *c) {
+    __real_f_0045BB50(c);
     static int test = -1000;
     if (test == -1000) test = getenv("RT_TOUCH_STEER") ? atoi(getenv("RT_TOUCH_STEER")) : 0;
     int32_t s = test ? test : __atomic_load_n(&touch_steer, __ATOMIC_RELAXED);
@@ -186,7 +187,25 @@ void __wrap_f_0045A060(CPU *c) {
     G[CONTROLS] = (uint8_t)(int8_t)s;
 }
 
+/* Verok's NoMovies (nfs2se.ini, written by the page): its patch is two whole instructions the
+ * lifter emits both ways (tools/verok-patch.py variants.json), and this picks one. */
+int g_variant_nomovies = 1;
+void verok_init(void) {
+    char p[1100]; snprintf(p, sizeof p, "%s/nfs2se.ini", g_game_dir);
+    FILE *f = fopen(p, "r"); char l[256];
+    while (f && fgets(l, sizeof l, f))
+        if (!strncasecmp(l, "NoMovies", 8)) { const char *e = strchr(l, '='); if (e) g_variant_nomovies = atoi(e + 1) != 0; }
+    if (f) fclose(f);
+    rt_log("nfs2se.ini: NoMovies=%d", g_variant_nomovies);
+}
+
 void game_frame(void) {
+    { void verok_patch_check(void); verok_patch_check(); }
+    /* P2 (docs/verok-plan.md): these use NFS2SEA.EXE's data addresses; off until they are
+     * found again in Verok's nfs2se.exe */
+    static int ported = -1;
+    if (ported < 0) ported = getenv("RT_GAME_TWEAKS") && atoi(getenv("RT_GAME_TWEAKS"));
+    if (!ported) return;
     set_player_name();
     unlock_all();
     catch_up_off();

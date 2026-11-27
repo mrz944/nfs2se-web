@@ -720,7 +720,58 @@ static uint32_t k_VirtualAlloc(CPU *c, const uint32_t *a) {
     uint32_t p = galloc(A(1) + 0xFFF);
     return p ? (p + 0xFFF) & ~0xFFFu : 0;
 }
-static uint32_t k_VirtualProtect(CPU *c, const uint32_t *a) { if (A(3)) WR32(A(3), 4); return 1; }
+/* Verok's nfs2se.p patches the exe's code at run time, each patch between VirtualProtect(RWX) and
+ * VirtualProtect(back). The lifted code was built from an exe with those patches already in
+ * (tools/verok-patch.py), so after nfs2se.p has written, its bytes should equal the exe file's.
+ * VirtualProtect notes the ranges; verok_patch_check() (each frame, game.c) compares their final
+ * bytes with the file and says loudly where they differ: then the lift doesn't match what
+ * nfs2se.p wants (e.g. the colour depth it picks from the renderer's modes). Expected: the
+ * SetViewports hook SilentPatch undoes, and the NoMovies variants (both versions lifted). */
+static struct { uint32_t at, n; } vp_seen[256];
+static int vp_nseen, vp_checked;
+static uint32_t vp_tlo, vp_thi;
+static uint8_t *vp_file;              /* the exe file's code section */
+static uint32_t k_VirtualProtect(CPU *c, const uint32_t *a) {
+    if (!vp_thi && g_image_base) {        /* the exe's first section: its code */
+        uint32_t pe = g_image_base + RD32(g_image_base + 0x3C), sec = pe + 24 + RD16(pe + 20);
+        vp_tlo = g_image_base + RD32(sec + 12); vp_thi = vp_tlo + RD32(sec + 16);
+        FILE *f = fopen(g_exe_path, "rb");
+        if (f && (vp_file = malloc(vp_thi - vp_tlo))) {
+            fseek(f, (long)RD32(sec + 20), SEEK_SET);
+            if (fread(vp_file, 1, vp_thi - vp_tlo, f) != vp_thi - vp_tlo) { free(vp_file); vp_file = NULL; }
+        }
+        if (f) fclose(f);
+    }
+    uint32_t at = A(0), n = A(1);
+    if (at >= vp_tlo && at + n <= vp_thi && n) {
+        int i;
+        for (i = 0; i < vp_nseen && !(vp_seen[i].at == at && vp_seen[i].n == n); i++) {}
+        if (i == vp_nseen && vp_nseen < 256) { vp_seen[vp_nseen].at = at; vp_seen[vp_nseen].n = n; vp_nseen++; }
+    }
+    if (A(3)) WR32(A(3), 0x20);           /* PAGE_EXECUTE_READ */
+    return 1;
+}
+void verok_patch_check(void) {
+    if (vp_checked == vp_nseen || !vp_file) return;
+    static const struct { uint32_t at, n; const char *why; } expected[] = {
+        { 0x42a170, 5, "SilentPatch: SetViewports" },
+        { 0x408202, 5, "NoMovies variant" }, { 0x40d73b, 2, "NoMovies variant" },
+    };
+    int bad = 0, ok = 0;
+    for (int i = vp_checked; i < vp_nseen; i++) {
+        uint32_t at = vp_seen[i].at, n = vp_seen[i].n;
+        if (!memcmp(G + at, vp_file + (at - vp_tlo), n)) { ok++; continue; }
+        const char *why = NULL;
+        for (size_t k = 0; k < sizeof expected / sizeof *expected; k++)
+            if (expected[k].at == at && expected[k].n == n) why = expected[k].why;
+        char w[140] = "", g[140] = "";
+        for (uint32_t k = 0; k < n && k < 64; k++) { sprintf(w + 2 * k, "%02x", vp_file[at - vp_tlo + k]); sprintf(g + 2 * k, "%02x", G[at + k]); }
+        if (why) rt_log("verok patch at %#x differs as expected (%s)", at, why);
+        else { bad++; rt_log("VEROK PATCH MISMATCH at %#x: the lift has %s, nfs2se.p wrote %s", at, w, g); }
+    }
+    rt_log("verok patches: %d ranges checked, %d as in the lift, %d mismatched", vp_nseen - vp_checked, ok, bad);
+    vp_checked = vp_nseen;
+}
 static uint32_t k_VirtualFree(CPU *c, const uint32_t *a) { return 1; }
 static uint32_t k_VirtualQuery(CPU *c, const uint32_t *a) {
     /* MEMORY_BASIC_INFORMATION: base, allocbase, allocprot, size, state, protect, type */
@@ -952,5 +1003,6 @@ const ImportDef imp_kernel32[] = {
     K(WideCharToMultiByte, 8), K(WriteConsoleA, 5), K(WriteFile, 5), K(HeapAlloc, 3), K(HeapFree, 3),
     K(GetPrivateProfileIntA, 4), K(GetPrivateProfileStringA, 6), K(GetPrivateProfileSectionA, 4),
     KS(Sleep, 1, k_SleepEx), KS(SetDllDirectoryA, 1, k_FlushFileBuffers), KS(VirtualProtect, 4, k_VirtualProtect),
+    KS(DisableThreadLibraryCalls, 1, k_FlushFileBuffers), KS(SetProcessAffinityMask, 2, k_FlushFileBuffers),
     {0},
 };

@@ -32,12 +32,25 @@ static const char *base_name(const char *p) {
 static struct { char name[64]; uint32_t base; } images[MAX_IMAGES];
 static int nimages;
 
-static uint32_t image_load(const char *path, const char *b) {
+/* DllMains of DLLs in the exe's import table (Verok's nfs2se.p): Windows runs them before
+ * the exe's entry point, here on the game thread once it exists (module_run_inits) */
+static struct { uint32_t base, entry; char name[64]; } pending[MAX_IMAGES];
+static int npending;
+
+static uint32_t image_load_ex(const char *path, const char *b, int defer_init) {
     for (int i = 0; i < nimages; i++) if (!strcasecmp(images[i].name, b)) return images[i].base;
+    if (nimages >= MAX_IMAGES) rt_fatal("too many lifted DLLs");
     char hp[1024]; fs_map(path, hp, sizeof hp);
-    uint32_t entry, base = load_pe_at(hp, &entry, lifted_base(b));
     snprintf(images[nimages].name, sizeof images[0].name, "%s", b);
-    images[nimages++].base = base;
+    images[nimages].base = lifted_base(b);    /* registered before its imports load */
+    nimages++;
+    uint32_t entry, base = load_pe_at(hp, &entry, lifted_base(b));
+    if (entry && defer_init) {
+        pending[npending].base = base; pending[npending].entry = entry;
+        snprintf(pending[npending].name, sizeof pending[0].name, "%s", b);
+        npending++;
+        return base;
+    }
     if (entry) {
         CPU *c = tls_cpu;
         uint32_t ok = guest_call(c, entry, 3, base, 1u /* DLL_PROCESS_ATTACH */, 0u);
@@ -45,6 +58,23 @@ static uint32_t image_load(const char *path, const char *b) {
     }
     return base;
 }
+static uint32_t image_load(const char *path, const char *b) { return image_load_ex(path, b, 0); }
+
+/* a lifted DLL named in an import table (core.c load_pe): load it, DllMain later */
+uint32_t module_import(const char *dll) {
+    if (!lifted_base(dll)) return 0;
+    char path[256]; snprintf(path, sizeof path, "%s\\%s", GAME_GUEST_DIR, dll);
+    return image_load_ex(path, dll, 1);
+}
+void module_run_inits(void) {
+    CPU *c = tls_cpu;
+    for (int i = 0; i < npending; i++) {
+        uint32_t ok = guest_call(c, pending[i].entry, 3, pending[i].base, 1u /* DLL_PROCESS_ATTACH */, 0u);
+        rt_log("%s DllMain -> %u", pending[i].name, ok);
+    }
+    npending = 0;
+}
+
 static int is_image(uint32_t h) {
     for (int i = 0; i < nimages; i++) if (images[i].base == h) return 1;
     return 0;

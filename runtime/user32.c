@@ -122,6 +122,16 @@ static uint32_t u_GetClientRect(CPU *c, const uint32_t *a) {
     return 1;
 }
 static uint32_t u_AdjustWindowRect(CPU *c, const uint32_t *a) { return 1; }
+/* Verok's nfs2se.p (windowed mode): the window is the whole screen and stays put */
+static uint32_t u_GetWindowRect(CPU *c, const uint32_t *a) { return u_GetClientRect(c, a); }
+static uint32_t u_GetWindowPlacement(CPU *c, const uint32_t *a) {
+    /* WINDOWPLACEMENT: length, flags, showCmd, ptMin, ptMax, rcNormalPosition */
+    uint32_t p = A(1);
+    WR32(p + 4, 0); WR32(p + 8, 1 /* SW_SHOWNORMAL */);
+    for (int i = 12; i < 28; i += 4) WR32(p + i, 0);
+    WR32(p + 28, 0); WR32(p + 32, 0); WR32(p + 36, (uint32_t)g_screen_w); WR32(p + 40, (uint32_t)g_screen_h);
+    return 1;
+}
 static uint32_t u_ClientToScreen(CPU *c, const uint32_t *a) { return 1; }
 static uint32_t u_GetSystemMetrics(CPU *c, const uint32_t *a) {
     switch (A(0)) {
@@ -201,7 +211,7 @@ const ImportDef imp_user32[] = {
     US(SetCursorPos, 2, u_one), US(SetForegroundWindow, 1, u_one), US(SetWindowPos, 7, u_one),
     U(SetWindowsHookExA, 4), U(ShowCursor, 1), U(ShowWindow, 2), US(SwapMouseButton, 1, u_zero),
     U(SystemParametersInfoA, 4), US(TranslateMessage, 1, u_TranslateMessage), US(UnhookWindowsHookEx, 1, u_one),
-    US(OffsetRect, 3, u_OffsetRect), US(keybd_event, 4, u_zero), US(wsprintfA, -1, u_wsprintfA),
+    US(OffsetRect, 3, u_OffsetRect), U(GetWindowRect, 2), U(GetWindowPlacement, 2), US(SetWindowPlacement, 2, u_one), US(keybd_event, 4, u_zero), US(wsprintfA, -1, u_wsprintfA),
     {0},
 };
 

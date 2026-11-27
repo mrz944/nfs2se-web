@@ -9,16 +9,17 @@
 /* ---- guest address space layout ----
  * Compact so the same layout fits a wasm32 heap allocation in the browser:
  *   0x00180000-0x00380000 main thread stack
- *   0x00400000            NFS2SEA.EXE         (lifted at its preferred base)
- *   0x00B00000            softtria.dll        (rebased by the lifter + loader)
- *   0x00C00000            eacsnd.dll          (rebased)
+ *   0x00400000            nfs2se.exe          (Verok's, patched by tools/verok-patch.py)
+ *   0x00B00000            EACSND.DLL          (rebased by the lifter + loader)
+ *   0x00C00000            nfs2se.p            (Verok's module; its own base 0x10000000 is heap here)
+ *   0x00D00000            voodoo2a.dll        (the Glide 3 thrash renderer)
  *   0x01000000-GUEST_SIZE heap (HeapAlloc/VirtualAlloc/thread stacks/TEBs)
  * Thunks and the return sentinel are fake code addresses above GUEST_SIZE that
  * are only ever compared, never dereferenced. */
 /* the game: guest install folder and exe (the page copies the folder to /opfs/<GAME_ID>) */
 #define GAME_ID         "nfs2se"
 #define GAME_GUEST_DIR  "C:\\NFS2SE"
-#define GAME_EXE        "NFS2SEA.EXE"
+#define GAME_EXE        "nfs2se.exe"
 #define GAME_EXE_PATH   GAME_GUEST_DIR "\\" GAME_EXE
 
 #define GUEST_SIZE      0x20000000u     /* 512 MiB; the game peaks around 100 MiB */
@@ -94,6 +95,8 @@ extern const ImportDef imp_kernel32[], imp_user32[], imp_gdi32[], imp_advapi32[]
 
 /* ---- dynamically loaded modules (thrash driver, eacsnd) ---- */
 uint32_t module_load(const char *name);         /* 0 if unknown */
+uint32_t module_import(const char *dll);        /* a lifted DLL in an import table, 0 if not lifted */
+void module_run_inits(void);                    /* their DllMains (game thread, before the entry) */
 uint32_t module_proc(uint32_t hmod, const char *name);
 
 /* ---- windows/messages ---- */
