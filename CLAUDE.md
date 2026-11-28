@@ -51,4 +51,7 @@ tools/nettest.sh           # two instances online, with: node web/serve.mjs 8097
 
 - The run log's `verok patches: N ranges checked, ..., 0 mismatched` line (first frame) says the lift matches what nfs2se.p patches at run time. A `VEROK PATCH MISMATCH` means tools/verok-patch.py needs that site.
 - `call to unlifted code X` adds X to build/missing.txt; `RELIFT=1 ./build.sh game` picks it up. The NFS2SEA lift's leftovers are in build/old-nfs2sea/.
-- game.c's tweaks (names, unlock, catch-up off, instant steering, laps) still use NFS2SEA addresses and are off until P2 (`RT_GAME_TWEAKS=1` forces them).
+- Online, natively: relay `timeout N node web/serve.mjs 8097 --relay-tcp build/p2.sock --data <scratch>`. Use a short relative Unix socket: the scratchpad path is too long for one, and `RT_NET=127.0.0.1:port` didn't connect. Both instances get `RT_NET=unix:build/p2.sock RT_ROOM=<room>`, and `RT_NET_STATS=1` prints packets and car states per second. Inputs that reach a network race (the game list needs Enter and then the click; the lobby's focus starts on "player car"):
+  - common start: `4000:RETURN,4500:RETURN,5200:RIGHT,5600:RIGHT,6000:RIGHT,6400:RIGHT,7000:DOWN,7300:DOWN,7600:DOWN,7900:DOWN,8200:DOWN,8500:DOWN,9000:RETURN,10000:DOWN,10300:DOWN,10600:DOWN,10900:DOWN,11500:RETURN,14000:RETURN`
+  - host: `+ 16000:DOWN,16400:DOWN,17000:RETURN,24000:DOWN,24300:DOWN,24600:DOWN,25500:RETURN`
+  - client: `+ 16000:DOWN,16400:DOWN,16800:DOWN,17400:RETURN,19500:RETURN,21000:CLICK@505;113,23000:DOWN,23300:DOWN,23600:DOWN,24300:RETURN`
