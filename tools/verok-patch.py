@@ -291,6 +291,14 @@ def main():
         if re.match(r"(?i)fedata/pc/text/text\.\w+$|gamedata/tracks/pc/3tr\d+\.hrz$", rel):
             dst = find_ci(game, rel); os.makedirs(os.path.dirname(dst), exist_ok=True)
             shutil.copyfile(os.path.join(src, rel), dst); copied.append(os.path.relpath(dst, game))
+    # the network and modem lobbies' art: this exe asks for it with the language letter in
+    # front (enetwork.qfs, emodem.qfs; the retail CD has NETWORK.QFS and MODEM.QFS). Without
+    # it, "create game" never draws its lobby.
+    art = find_ci(game, "fedata/pc/art")
+    for name in ("NETWORK.QFS", "MODEM.QFS"):
+        s = find_ci(game, "fedata/pc/art/" + name)
+        if os.path.exists(s):
+            shutil.copyfile(s, os.path.join(art, "E" + name)); copied.append(os.path.relpath(os.path.join(art, "E" + name), game))
     drv = find_ci(game, "drivers/glide3x"); os.makedirs(drv, exist_ok=True)
     shutil.copyfile(os.path.join(src, "Drivers", "nglide", "voodoo2a.dll"), os.path.join(drv, "voodoo2a.dll"))
     with open(os.path.join(drv, "thrash.ini"), "w", newline="\r\n") as fp:
