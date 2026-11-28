@@ -147,15 +147,15 @@ void gpu_publish(GFrame *f) {
         }
     }
     {   /* RT_CARDUMP=file: every 0.25 s, the 8 car records (0x690 bytes each, 0 if absent) and 64 KB
-         * of the game's data at 0x500000, after a double timestamp (debugging, reverse engineering) */
+         * of the game's data at 0x502230 (NFS2SEA's 0x500000 in Verok's nfs2se.exe), after a double timestamp (debugging, reverse engineering) */
         static FILE *cd; static int on = -1; static double last;
         if (on < 0) { const char *e = getenv("RT_CARDUMP"); on = e != NULL; if (e) cd = fopen(e, "wb"); }
         static double every = -1; if (every < 0) every = getenv("RT_CARDUMP_MS") ? atof(getenv("RT_CARDUMP_MS")) / 1000 : 0.25;
         if (cd && now_s() - last >= every) {
             last = now_s(); double t = now_s(); fwrite(&t, 8, 1, cd);
             static uint8_t zero[0x690];
-            for (int i = 0; i < 8; i++) { uint32_t car = RD32(0x50f918u + 4 * i); fwrite(car >= 0x400000 && car < GUEST_SIZE ? G + car : zero, 1, 0x690, cd); }
-            fwrite(G + 0x500000, 1, 0x20000, cd); fflush(cd);
+            for (int i = 0; i < 8; i++) { uint32_t car = RD32(0x511b48u + 4 * i); fwrite(car >= 0x400000 && car < GUEST_SIZE ? G + car : zero, 1, 0x690, cd); }
+            fwrite(G + 0x502230, 1, 0x20000, cd); fflush(cd);
         }
     }
     {   /* RT_CARLOG=1: every second, each car's position and speed (debugging the online sync) */
@@ -164,7 +164,7 @@ void gpu_publish(GFrame *f) {
         if (cl > 0 && now_s() - last >= cl / 1000.0) {
             last = now_s(); char b[768]; int k = 0;
             for (int i = 0; i < 8; i++) {
-                uint32_t car = RD32(0x50f918u + 4 * i); if (car < 0x400000 || car >= GUEST_SIZE) continue;   /* NFS II SE: net.c */
+                uint32_t car = RD32(0x511b48u + 4 * i); if (car < 0x400000 || car >= GUEST_SIZE) continue;   /* NFS II SE: net.c */
                 int32_t p[3], vz; memcpy(p, G + car + 0x9c, 12); memcpy(&vz, G + car + 0xb0, 4);
                 k += snprintf(b + k, sizeof b - k, " %d:(%.2f,%.2f,%.2f %.1f)", i, p[0] / 65536.0, p[1] / 65536.0, p[2] / 65536.0, vz / 65536.0);
             }

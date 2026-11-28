@@ -14,7 +14,10 @@
 #include <emscripten/threading.h>
 #endif
 
-#define OWN_NAME 0x510d1cu
+/* Addresses: Verok's nfs2se.exe (EA's 1997-11-27 patch exe). Its .bss is NFS2SEA.EXE's moved by
+ * +0x2230 (each one found again from the instructions that use it, docs/verok-plan.md P2); the
+ * NFS2SEA values the notes below were found at are in brackets. */
+#define OWN_NAME 0x512f4cu         /* [0x510d1c] */
 #define OWN_NAME_LEN 9
 
 static int name_valid(const uint8_t *p) {           /* the settings are in: a printable name */
@@ -41,7 +44,7 @@ static void set_player_name(void) {
  * found by snapshotting memory before and after each code: +0x1c Monolithic Studios (0/1) and
  * +0x1d the bonus car level (1 Bomber BFS, 2 + Tombstone, 3 + FZR 2000). The game saves them with
  * its settings, as it would after winning. */
-#define SETTINGS 0x510b70u
+#define SETTINGS 0x512da0u         /* [0x510b70] */
 static void unlock_all(void) {
     static int done = -1;
     if (done < 0) { const char *e = getenv("RT_LOCKED"); done = e && *e && *e != '0'; }
@@ -63,12 +66,12 @@ static void unlock_all(void) {
  * Not while a replay plays (Options > Load/Save > View Replay): the cars drive their recorded
  * race again, laps and all. The race config's +0x1c (0x50ffe4) is 2 then (the replay writer
  * sets it in the file, and playing it loads that config); 0 in races. */
-#define CAR_TABLE 0x50f918u
-#define RACE_TRACK 0x50ffecu
-#define RACE_LAPS 0x50ffccu
-#define RACE_BACKWARD 0x50fff8u
-#define RACE_MIRRORED 0x50fffcu
-#define RACE_KIND 0x50ffe4u     /* 2: a replay plays */
+#define CAR_TABLE 0x511b48u        /* [0x50f918] */
+#define RACE_TRACK 0x51221cu       /* [0x50ffec] */
+#define RACE_LAPS 0x5121fcu        /* [0x50ffcc] */
+#define RACE_BACKWARD 0x512228u    /* [0x50fff8] */
+#define RACE_MIRRORED 0x51222cu    /* [0x50fffc] */
+#define RACE_KIND 0x512214u        /* [0x50ffe4] 2: a replay plays */
 /* Instant steering (RT_INSTANT_STEER=1, the start page's setting): the wheels reach full lock at
  * once instead of ramping. Each physics tick (0x468b10) the game moves a car's steering (+0x2e4)
  * toward where the controls point (+0x2e0) by at most the car's step (its spec +0x130/+0x134),
@@ -77,8 +80,8 @@ static void unlock_all(void) {
  * as the AI's blocks do. The race setup (0x459890) writes 1 there for human players; nothing
  * saves it. So for the local players' slots it is held at 0 during races. Found by watching the
  * game's reads of the Left key through to the car (RT_RWATCH, a WWATCH=1 build). */
-#define RACE_PARAMS 0x510040u           /* 8 x 0x40 */
-#define SPLIT_SCREEN_PLAYERS 0x50ffd8u  /* the race mode: 0 one player, 1 split screen, 4 network */
+#define RACE_PARAMS 0x512270u           /* [0x510040] 8 x 0x40 */
+#define SPLIT_SCREEN_PLAYERS 0x512208u  /* [0x50ffd8] the race mode: 0 one player, 1 split screen, 4 network */
 static int instant = -1;
 static void instant_steering(void) {
     if (instant < 0) { instant = getenv("RT_INSTANT_STEER") && atoi(getenv("RT_INSTANT_STEER")); if (instant) rt_log("game: instant steering"); }
@@ -106,7 +109,7 @@ static void instant_steering(void) {
  * still works. RT_CATCHUP=1 keeps the game's own way. */
 #define GAME_TYPE (SETTINGS + 0x9u)     /* 0 one player, else split screen or network */
 #define CATCH_UP (SETTINGS + 0xeu)
-#define RACE_CATCH_UP 0x50ffe0u
+#define RACE_CATCH_UP 0x512210u    /* [0x50ffe0] */
 static void catch_up_off(void) {
     static int keep = -1, type = -1, hold;
     if (keep < 0) { const char *e = getenv("RT_CATCHUP"); keep = e && *e && *e != '0'; }
@@ -171,7 +174,7 @@ static void lap_watch(void) {
  * the page's value while the page steers (anything but 0); a centred stick leaves the keys'.
  * Online that block is also what goes to the host, so others see the same steering.
  * RT_TOUCH_STEER=-127..127 sets it natively (testing). */
-#define CONTROLS 0x512a30u         /* Verok's nfs2se.exe (NFS2SEA: 0x510800) */
+#define CONTROLS 0x512a30u         /* [0x510800] */
 static volatile int32_t touch_steer;
 #ifdef __EMSCRIPTEN__
 EMSCRIPTEN_KEEPALIVE volatile int32_t *rt_web_touch_steer(void) { return &touch_steer; }
@@ -201,11 +204,6 @@ void verok_init(void) {
 
 void game_frame(void) {
     { void verok_patch_check(void); verok_patch_check(); }
-    /* P2 (docs/verok-plan.md): these use NFS2SEA.EXE's data addresses; off until they are
-     * found again in Verok's nfs2se.exe */
-    static int ported = -1;
-    if (ported < 0) ported = getenv("RT_GAME_TWEAKS") && atoi(getenv("RT_GAME_TWEAKS"));
-    if (!ported) return;
     set_player_name();
     unlock_all();
     catch_up_off();

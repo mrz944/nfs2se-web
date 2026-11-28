@@ -161,7 +161,7 @@ static uint32_t spy_call(int slot, CPU *c, const uint32_t *a) {
     if (n <= (uint64_t)spy_limit) { rt_log("       = %#x", r); if (!strncmp(spy[slot].name, "_THRASH_about", 13) || !strncmp(spy[slot].name, "_THRASH_lockwindow", 18)) spy_dump_ptr("ret", r); }
     if (!strncmp(spy[slot].name, "_THRASH_pageflip", 16) || !strncmp(spy[slot].name, "_THRASH_sync", 12)) {
         static struct { uint32_t ra; uint64_t n; } callers[32]; static int ncallers;
-        uint32_t ra = RD32(c->r[ESP]); if (ra == 0x434b51 || ra == 0x434b2d) ra = RD32(c->r[ESP] + 16);
+        uint32_t ra = RD32(c->r[ESP]); if (ra == 0x436641 || ra == 0x43661d)   /* NFS2SEA: 0x434b51, 0x434b2d */ ra = RD32(c->r[ESP] + 16);
         int i; for (i = 0; i < ncallers && callers[i].ra != ra; i++) {}
         if (i == ncallers && ncallers < 32) callers[ncallers++].ra = ra;
         if (i < 32) callers[i].n++;

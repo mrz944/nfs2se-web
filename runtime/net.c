@@ -154,7 +154,7 @@ void net_deliver(const uint8_t src[6], const uint8_t *p, int len) {
  * packets apart): states from another race than ours are ignored, or its cars would be pulled
  * to places on another track. */
 #define MSG_CONTROLS 0x05
-#define CAR_TABLE 0x50f918u
+#define CAR_TABLE 0x511b48u        /* Verok's nfs2se.exe (NFS2SEA: 0x50f918, as below) */
 #define CAR_STATE 0x9cu
 #define CAR_BYTES 88
 #define FIX 65536.0f
