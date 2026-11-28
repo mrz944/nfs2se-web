@@ -62,7 +62,7 @@ typedef struct {
 } VSock;
 static VSock socks[NSOCK];
 
-static struct { uint64_t tx, rx, txb, rxb, drop; } stats;
+static struct { uint64_t tx, rx, txb, rxb, drop, sync_tx, sync_rx; } stats;   /* sync_*: car states (SYNC_PORT) */
 static int net_trace = -1;
 static double tnow(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); return (double)t.tv_sec + t.tv_nsec * 1e-9; }
 static void trace_pkt(const char *dir, const uint8_t node[6], uint16_t dport, uint16_t sport, const uint8_t *d, int n) {
@@ -333,7 +333,7 @@ void net_frame(void) {
         int tagged = am_host || race_host_known;
         memcpy(pkt + 12, am_host ? self_node : race_host, 6);                /* our race: its host */
         pthread_mutex_unlock(&sync_mu);
-        if (cnt && tagged) transport_send(BCAST, pkt, o);
+        if (cnt && tagged) { stats.sync_tx++; transport_send(BCAST, pkt, o); }
     }
     pthread_mutex_lock(&sync_mu);
     for (int k = 0; k < 8; k++) {
@@ -599,7 +599,7 @@ static void queue_pkt(const uint8_t src[6], const uint8_t *p, int len, const cha
 }
 static void deliver_now(const uint8_t src[6], const uint8_t *p, int len) {
     uint16_t dport = (uint16_t)(p[0] << 8 | p[1]);
-    if (dport == SYNC_PORT) { sync_state_in(src, p + 4, len - 4); return; }
+    if (dport == SYNC_PORT) { stats.sync_rx++; sync_state_in(src, p + 4, len - 4); return; }
     uint8_t buf[MAXPKT + 4];
     if (len > (int)sizeof buf) { queue_pkt(src, p, len, "in "); return; }
     memcpy(buf, p, (size_t)len);
@@ -968,13 +968,14 @@ const ImportDef imp_wsock32[] = {
 /* RT_NET_STATS=1: one traffic line per second */
 static void *stats_main(void *unused) {
     (void)unused;
-    uint64_t ptx = 0, prx = 0, ptxb = 0, prxb = 0;
+    uint64_t ptx = 0, prx = 0, ptxb = 0, prxb = 0, pstx = 0, psrx = 0;
     for (;;) {
         sleep(1);
-        rt_log("net/s: tx %llu pkts %llu B, rx %llu pkts %llu B, drops %llu",
+        rt_log("net/s: tx %llu pkts %llu B, rx %llu pkts %llu B, drops %llu, car states tx %llu rx %llu",
                (unsigned long long)(stats.tx - ptx), (unsigned long long)(stats.txb - ptxb),
-               (unsigned long long)(stats.rx - prx), (unsigned long long)(stats.rxb - prxb), (unsigned long long)stats.drop);
-        ptx = stats.tx; prx = stats.rx; ptxb = stats.txb; prxb = stats.rxb;
+               (unsigned long long)(stats.rx - prx), (unsigned long long)(stats.rxb - prxb), (unsigned long long)stats.drop,
+               (unsigned long long)(stats.sync_tx - pstx), (unsigned long long)(stats.sync_rx - psrx));
+        ptx = stats.tx; prx = stats.rx; ptxb = stats.txb; prxb = stats.rxb; pstx = stats.sync_tx; psrx = stats.sync_rx;
     }
     return NULL;
 }
