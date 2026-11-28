@@ -157,7 +157,14 @@ Find each one by its byte pattern around the old address, and log loudly when on
   - catch-up turned off when Game Setup leaves one player;
   - lap reports with RT_LAP_CAR=1: lap 1/4 1:14.53, track 0, car GT90, flags 0x90.
 - **The lobby art.** The new exe asks for `enetwork.qfs` (client-server) and `emodem.qfs` (peer-peer), with a language letter in front. Without them "create game" never draws its lobby. `verok-patch.py` now installs copies of NETWORK.QFS and MODEM.QFS.
-- **Online: not working yet in the native harness.** Name, protocol IPX, create/join game and the game list all work: the SAP query and reply, then the client's `srv` and the host's `dec` with "Hosty". But choosing the host's game sends nothing.
+- **Online works (natively, two instances, 2026-11-28).**
+  - The earlier "join sends nothing" was the test input: the game list needs Enter (ending the browse, `0x48d2ac`) and then a click on the game. Then the join (`0x48d380`) sends `add` and the host answers `rsp`.
+  - In the lobby both press RACE, and the network race (mode 4, catch-up off) runs full-screen on both: SilentPatch's viewport fix works.
+  - net.c needs no changes. The race packets are the same as NFS2SEA's (`dat`, 16-byte controls and 43-byte bundles with 0x05 at offset 10), even in "2-8 / client-server". The steady beat is on, the client learns its car ("smoother play on, my car is 1"), and car states go both ways at about 32/s (now counted in the `net/s` line).
+  - A 9 s pause by the host, then continue: both carry on (keep-alives only during the pause, full traffic after).
+  - Still for P5: a knockout over several rounds, quit and rejoin, and the browser.
+  - The input sequences are in CLAUDE.md (Native harness).
+- **(Superseded) What the first attempts showed:** Name, protocol IPX, create/join game and the game list all work: the SAP query and reply, then the client's `srv` and the host's `dec` with "Hosty". But choosing the host's game sends nothing.
   - EA's patch rewrote the network layer: NFS2SEA has 13 message types (0x4af000…), nfs2se.exe has 28 (0x48c000…): ack alw anp die gam huh new nwa res rmv rta rtd sht upd. There is also a new "players: 2 / peer-peer | 2-8 / client-server" option.
   - net.c's steady beat, car sync and knockout fix were built against NFS2SEA's packets, so online needs its own work: first a real join (by hand in two browser tabs on staging, or more harness work on the list screen), then a check of net.c against the new packets.
 - Natively, the relay must be a Unix socket with a short path (`--relay-tcp build/p2.sock`). The TCP form didn't connect, and the scratchpad path is too long for a socket.
